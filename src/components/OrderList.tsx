@@ -5,7 +5,7 @@ import { Order, TypeService, Boutique } from '../types';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { WashingMachine, Shirt, CheckCircle2, MessageSquare, Trash2, Edit, Play, Store, Zap, Droplets, ChevronRight, Phone, Calendar, CreditCard, Info } from 'lucide-react';
+import { WashingMachine, Shirt, CheckCircle2, MessageSquare, Trash2, Edit, Play, Store, Zap, Droplets, ChevronRight, Phone, Calendar, CreditCard, Info, Camera } from 'lucide-react';
 import { sendWhatsAppReceipt, sendArrivalNotification } from '../lib/whatsapp';
 import { toast } from 'sonner';
 import { motion, AnimatePresence } from 'motion/react';
@@ -121,6 +121,9 @@ export const OrderList: React.FC<OrderListProps> = ({ onEdit, isAdmin, userBouti
                     <div className="flex items-center gap-3">
                       {getServiceIcon(order.typeService)}
                       {getServiceBadge(order.typeService)}
+                      {order.photoPreuveUrl && (
+                        <Camera className="h-4 w-4 text-muted-foreground" title="Photo disponible" />
+                      )}
                     </div>
                   </TableCell>
                   <TableCell>
@@ -234,6 +237,7 @@ export const OrderList: React.FC<OrderListProps> = ({ onEdit, isAdmin, userBouti
                 <div className="flex items-center gap-2 text-xs font-medium">
                   {getServiceIcon(order.typeService)}
                   <span>{order.typeService}</span>
+                  {order.photoPreuveUrl && <Camera className="h-3 w-3" />}
                 </div>
                 <ChevronRight className="h-5 w-5 text-slate-300" />
               </div>
@@ -344,6 +348,24 @@ export const OrderList: React.FC<OrderListProps> = ({ onEdit, isAdmin, userBouti
                   </span>
                 </div>
               </div>
+
+              {/* Photo Preuve */}
+              {selectedOrder.photoPreuveUrl && (
+                <div className="space-y-2">
+                  <p className="text-[10px] font-black uppercase text-muted-foreground flex items-center gap-1">
+                    <Camera className="h-3 w-3" /> Photo de Preuve
+                  </p>
+                  <div className="rounded-xl overflow-hidden border-2 shadow-sm">
+                    <img 
+                      src={selectedOrder.photoPreuveUrl} 
+                      alt="Preuve" 
+                      className="w-full h-auto object-cover max-h-64"
+                      loading="lazy"
+                      referrerPolicy="no-referrer"
+                    />
+                  </div>
+                </div>
+              )}
 
               {/* Quick Actions */}
               <div className="grid grid-cols-2 gap-2">

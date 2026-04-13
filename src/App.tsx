@@ -29,6 +29,20 @@ export default function App() {
   const [activeTab, setActiveTab] = useState('orders');
   const [timeLockEnabled, setTimeLockEnabled] = useState(true);
   const [sessionConflict, setSessionConflict] = useState<UserProfile | null>(null);
+  const [isOnline, setIsOnline] = useState(navigator.onLine);
+
+  useEffect(() => {
+    const handleOnline = () => setIsOnline(true);
+    const handleOffline = () => setIsOnline(false);
+
+    window.addEventListener('online', handleOnline);
+    window.addEventListener('offline', handleOffline);
+
+    return () => {
+      window.removeEventListener('online', handleOnline);
+      window.removeEventListener('offline', handleOffline);
+    };
+  }, []);
 
   const getDeviceInfo = () => {
     const ua = navigator.userAgent;
@@ -380,6 +394,13 @@ export default function App() {
           </div>
 
           <div className="flex items-center gap-4">
+            <div className="flex items-center gap-2 px-3 py-1 rounded-full bg-muted/50 border">
+              <div className={`h-2 w-2 rounded-full ${isOnline ? 'bg-green-500 animate-pulse' : 'bg-orange-500'}`} />
+              <span className="text-[10px] font-black uppercase tracking-wider">
+                {isOnline ? 'Connecté' : 'Hors-ligne'}
+              </span>
+            </div>
+
             <div className="hidden md:flex flex-col items-end mr-2">
               <span className="text-sm font-bold">{user.displayName}</span>
               <span className="text-[10px] uppercase font-black text-primary bg-primary/10 px-2 py-0.5 rounded">

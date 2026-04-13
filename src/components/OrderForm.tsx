@@ -9,9 +9,11 @@ import { VoiceRecorder } from './VoiceRecorder';
 import { db, handleFirestoreError, OperationType } from '../firebase';
 import { collection, addDoc, updateDoc, doc, serverTimestamp, query, where, getDocs } from 'firebase/firestore';
 import { toast } from 'sonner';
-import { X, Calendar as CalendarIcon, Zap, Store, Loader2, AlertCircle } from 'lucide-react';
+import { X, Calendar as CalendarIcon, Zap, Store, Loader2, AlertCircle, Camera, Image as ImageIcon, CheckCircle2 } from 'lucide-react';
 import { Checkbox } from '@/components/ui/checkbox';
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
+import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
+import { storage } from '../firebase';
 
 interface OrderFormProps {
   initialOrder?: Order;
@@ -49,6 +51,7 @@ export const OrderForm: React.FC<OrderFormProps> = ({ initialOrder, onClose, use
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isCheckingFacture, setIsCheckingFacture] = useState(false);
   const [factureError, setFactureError] = useState<string | null>(null);
+  const [isUploadingPhoto, setIsUploadingPhoto] = useState(false);
 
   // Check uniqueness of Numero Facture
   const checkFactureUniqueness = async (numero: string) => {
@@ -102,6 +105,25 @@ export const OrderForm: React.FC<OrderFormProps> = ({ initialOrder, onClose, use
     const start = 6 * 60; // 06:00
     const end = 22 * 60 + 30; // 22:30
     return time >= start && time <= end;
+  };
+
+  const handlePhotoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    setIsUploadingPhoto(true);
+    try {
+      const storageRef = ref(storage, `photos_preuve/${Date.now()}_${file.name}`);
+      const snapshot = await uploadBytes(storageRef, file);
+      const url = await getDownloadURL(snapshot.ref);
+      setFormData(prev => ({ ...prev, photoPreuveUrl: url }));
+      toast.success('Photo ajoutée');
+    } catch (err) {
+      console.error("Error uploading photo:", err);
+      toast.error('Erreur lors de l\'envoi de la photo');
+    } finally {
+      setIsUploadingPhoto(false);
+    }
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -398,6 +420,41 @@ export const OrderForm: React.FC<OrderFormProps> = ({ initialOrder, onClose, use
             <VoiceRecorder 
               onUploadComplete={(url) => setFormData({ ...formData, noteVocaleUrl: url })} 
             />
+          </div>
+
+          <div className="space-y-2">
+            <Label className="flex items-center gap-2">
+              <Camera className="h-4 w-4" /> Photo de Preuve (Linge)
+            </Label>
+            <div className="flex items-center gap-4">
+              <Input
+                type="file"
+                accept="image/*"
+                onChange={handlePhotoUpload}
+                className="hidden"
+                id="photo-upload"
+              />
+              <Label 
+                htmlFor="photo-upload" 
+                className="flex-1 h-12 border-2 border-dashed rounded-lg flex items-center justify-center gap-2 cursor-pointer hover:bg-muted transition-colors"
+              >
+                {isUploadingPhoto ? (
+                  <Loader2 className="h-5 w-5 animate-spin" />
+                ) : formData.photoPreuveUrl ? (
+                  <CheckCircle2 className="h-5 w-5 text-green-500" />
+                ) : (
+                  <ImageIcon className="h-5 w-5 text-muted-foreground" />
+                )}
+                <span className="font-medium">
+                  {isUploadingPhoto ? 'Envoi...' : formData.photoPreuveUrl ? 'Photo enregistrée' : 'Prendre/Choisir une photo'}
+                </span>
+              </Label>
+              {formData.photoPreuveUrl && (
+                <div className="h-12 w-12 rounded-lg overflow-hidden border">
+                  <img src={formData.photoPreuveUrl} alt="Preuve" className="h-full w-full object-cover" />
+                </div>
+              )}
+            </div>
           </div>
 
           <div className="pt-4 flex gap-4">

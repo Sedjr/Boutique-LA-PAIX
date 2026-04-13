@@ -22,6 +22,7 @@ export interface Order {
   isExpress: boolean;
   boutiqueSource: Boutique;
   noteVocaleUrl?: string;
+  photoPreuveUrl?: string;
   createdAt: any;
   updatedAt: any;
 }
