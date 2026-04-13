@@ -91,6 +91,8 @@ export default function App() {
       if (snapshot.exists()) {
         setTimeLockEnabled(snapshot.data().timeLockEnabled);
       }
+    }, (err) => {
+      console.warn("Settings listener failed (likely not authenticated):", err.message);
     });
 
     // Periodic check every 5 minutes
@@ -121,7 +123,8 @@ export default function App() {
         const data = docSnap.data() as UserProfile;
 
         // Session Control Logic
-        if (data.currentSessionId && data.currentSessionId !== SESSION_ID) {
+        const isSecretaire = data.role === 'secretaire';
+        if (isSecretaire && data.currentSessionId && data.currentSessionId !== SESSION_ID) {
           // If we are already logged in but the ID changed, force logout
           if (user && user.currentSessionId === SESSION_ID) {
             toast.error("Session expirée : Connecté sur un autre appareil.");
@@ -136,11 +139,15 @@ export default function App() {
           }
         }
 
-        // If no conflict or we are taking over
-        if (!data.currentSessionId || data.currentSessionId === SESSION_ID) {
-          if (!data.currentSessionId) {
-            await setDoc(userRef, { currentSessionId: SESSION_ID }, { merge: true });
-            await logConnection(data.email, 'Connexion');
+        // If no conflict OR if Admin (bypass)
+        if (!isSecretaire || !data.currentSessionId || data.currentSessionId === SESSION_ID) {
+          if (data.currentSessionId !== SESSION_ID) {
+            // For Admin or new session, update ID and log connection
+            // We only do this if we haven't initialized the local user state yet
+            if (!user) {
+              await setDoc(userRef, { currentSessionId: SESSION_ID }, { merge: true });
+              await logConnection(data.email, 'Connexion');
+            }
           }
           
           if (!data.boutiqueAssignee || data.isApproved === undefined || data.isActive === undefined || data.hasAcceptedContract === undefined) {

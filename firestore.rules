@@ -134,7 +134,7 @@ service cloud.firestore {
       allow delete: if isAdmin();
     }
     match /settings/{settingId} {
-      allow read: if isAuthenticated();
+      allow read: if true;
       allow write: if isAdmin();
     }
     match /notifications/{notificationId} {

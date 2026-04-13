@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { db } from '../firebase';
+import { db, handleFirestoreError, OperationType } from '../firebase';
 import { collection, query, onSnapshot, where } from 'firebase/firestore';
 import { Order, Boutique, CashMovement } from '../types';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -41,14 +41,14 @@ export const FinancialBilan: React.FC<FinancialBilanProps> = ({ userBoutique, is
       const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })) as Order[];
       setOrders(data);
     }, (error) => {
-      console.error("FinancialBilan Orders Error:", error);
+      handleFirestoreError(error, OperationType.LIST, 'orders');
     });
 
     const unsubMovements = onSnapshot(qMovements, (snapshot) => {
       const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })) as CashMovement[];
       setMovements(data);
     }, (error) => {
-      console.error("FinancialBilan Movements Error:", error);
+      handleFirestoreError(error, OperationType.LIST, 'cashMovements');
     });
 
     return () => { unsubOrders(); unsubMovements(); };
