@@ -8,6 +8,7 @@ import { OrderForm } from './components/OrderForm';
 import { FinancialBilan } from './components/FinancialBilan';
 import { CashManagement } from './components/CashManagement';
 import { UserManagement } from './components/UserManagement';
+import { MyCash } from './components/MyCash';
 import { ContractView } from './components/ContractView';
 import { TimeLockView } from './components/TimeLockView';
 import { Button } from '@/components/ui/button';
@@ -33,63 +34,16 @@ export default function App() {
       }
     });
 
-    // Periodic check every 5 minutes (300,000 ms) to force re-evaluation of time lock
+    // Periodic check every 5 minutes
     const interval = setInterval(() => {
-      // This forces a re-render and re-evaluation of isWithinServiceHours()
       setUser(prev => prev ? { ...prev } : null);
     }, 300000);
 
-    const unsubscribeAuth = onAuthStateChanged(auth, async (firebaseUser) => {
-      if (firebaseUser) {
-        try {
-          const userDoc = await getDoc(doc(db, 'users', firebaseUser.uid));
-          if (userDoc.exists()) {
-            const data = userDoc.data() as UserProfile;
-            // Ensure fields exist for older accounts
-            if (!data.boutiqueAssignee || data.isApproved === undefined || data.isActive === undefined || data.hasAcceptedContract === undefined) {
-              const updatedData = {
-                ...data,
-                boutiqueAssignee: data.boutiqueAssignee || (data.role === 'admin' ? 'Toutes' : 'Senade'),
-                isApproved: data.isApproved ?? (data.role === 'admin'),
-                isActive: data.isActive ?? true,
-                hasAcceptedContract: data.hasAcceptedContract ?? (data.role === 'admin')
-              };
-              await setDoc(doc(db, 'users', firebaseUser.uid), updatedData, { merge: true });
-              setUser(updatedData);
-            } else {
-              setUser(data);
-            }
-          } else {
-            const isOwner = firebaseUser.email === 'eulogehoussou9@gmail.com';
-            const newProfile: UserProfile = {
-              uid: firebaseUser.uid,
-              email: firebaseUser.email || '',
-              role: isOwner ? 'admin' : 'secretaire',
-              boutiqueAssignee: isOwner ? 'Toutes' : 'Senade',
-              isApproved: isOwner, // Admin is auto-approved
-              isActive: true,
-              hasAcceptedContract: isOwner, // Admin auto-accepts
-              displayName: firebaseUser.displayName || ''
-            };
-            await setDoc(doc(db, 'users', firebaseUser.uid), newProfile);
-            
-            // Notification for new user registration
-            await addDoc(collection(db, 'notifications'), {
-              type: 'NEW_USER',
-              message: `Nouvel utilisateur inscrit: ${firebaseUser.email}`,
-              createdAt: serverTimestamp(),
-              read: false
-            });
-            
-            setUser(newProfile);
-          }
-        } catch (err) {
-          handleFirestoreError(err, OperationType.GET, `users/${firebaseUser.uid}`);
-        }
-      } else {
+    const unsubscribeAuth = onAuthStateChanged(auth, (firebaseUser) => {
+      if (!firebaseUser) {
         setUser(null);
+        setLoading(false);
       }
-      setLoading(false);
     });
 
     return () => {
@@ -98,6 +52,59 @@ export default function App() {
       clearInterval(interval);
     };
   }, []);
+
+  useEffect(() => {
+    if (!auth.currentUser) return;
+
+    const userRef = doc(db, 'users', auth.currentUser.uid);
+    const unsubscribeUser = onSnapshot(userRef, async (docSnap) => {
+      if (docSnap.exists()) {
+        const data = docSnap.data() as UserProfile;
+        if (!data.boutiqueAssignee || data.isApproved === undefined || data.isActive === undefined || data.hasAcceptedContract === undefined) {
+          const updatedData = {
+            ...data,
+            boutiqueAssignee: data.boutiqueAssignee || (data.role === 'admin' ? 'Toutes' : 'Senade'),
+            isApproved: data.isApproved ?? (data.role === 'admin'),
+            isActive: data.isActive ?? true,
+            hasAcceptedContract: data.hasAcceptedContract ?? (data.role === 'admin')
+          };
+          await setDoc(userRef, updatedData, { merge: true });
+          setUser(updatedData);
+        } else {
+          setUser(data);
+        }
+      } else {
+        const firebaseUser = auth.currentUser!;
+        const isOwner = firebaseUser.email === 'eulogehoussou9@gmail.com';
+        const newProfile: UserProfile = {
+          uid: firebaseUser.uid,
+          email: firebaseUser.email || '',
+          role: isOwner ? 'admin' : 'secretaire',
+          boutiqueAssignee: isOwner ? 'Toutes' : 'Senade',
+          isApproved: isOwner,
+          isActive: true,
+          hasAcceptedContract: isOwner,
+          displayName: firebaseUser.displayName || ''
+        };
+        await setDoc(userRef, newProfile);
+        
+        await addDoc(collection(db, 'notifications'), {
+          type: 'NEW_USER',
+          message: `Nouvel utilisateur inscrit: ${firebaseUser.email}`,
+          createdAt: serverTimestamp(),
+          read: false
+        });
+        
+        setUser(newProfile);
+      }
+      setLoading(false);
+    }, (err) => {
+      console.error("Error listening to user profile:", err);
+      setLoading(false);
+    });
+
+    return () => unsubscribeUser();
+  }, [auth.currentUser?.uid]);
 
   const handleLogin = async () => {
     const provider = new GoogleAuthProvider();
@@ -309,6 +316,12 @@ export default function App() {
                 <Wallet className="h-4 w-4 md:h-5 md:w-5" />
                 Caisse
               </TabsTrigger>
+              {user.role === 'secretaire' && (
+                <TabsTrigger value="mycash" className="text-sm md:text-lg font-bold gap-2 data-[state=active]:bg-white data-[state=active]:shadow-sm">
+                  <BarChart3 className="h-4 w-4 md:h-5 md:w-5" />
+                  Ma Caisse
+                </TabsTrigger>
+              )}
               {user.role === 'admin' && (
                 <TabsTrigger value="bilan" className="text-sm md:text-lg font-bold gap-2 data-[state=active]:bg-white data-[state=active]:shadow-sm">
                   <BarChart3 className="h-4 w-4 md:h-5 md:w-5" />
@@ -337,6 +350,15 @@ export default function App() {
                 isAdmin={user.role === 'admin'}
               />
             </TabsContent>
+
+            {user.role === 'secretaire' && (
+              <TabsContent value="mycash" className="mt-0">
+                <MyCash 
+                  userBoutique={user.boutiqueAssignee}
+                  userUid={user.uid}
+                />
+              </TabsContent>
+            )}
             
             {user.role === 'admin' && (
               <TabsContent value="bilan" className="mt-0">
@@ -361,7 +383,11 @@ export default function App() {
         <Button variant="ghost" size="icon" className={activeTab === 'orders' ? 'text-primary' : 'text-muted-foreground'} onClick={() => setActiveTab('orders')}><ListTodo /></Button>
         <Button variant="ghost" size="icon" className={activeTab === 'cash' ? 'text-primary' : 'text-muted-foreground'} onClick={() => setActiveTab('cash')}><Wallet /></Button>
         <Button onClick={() => setShowForm(true)} className="rounded-full h-12 w-12 shadow-lg"><Plus /></Button>
-        <Button variant="ghost" size="icon" className={activeTab === 'bilan' ? 'text-primary' : 'text-muted-foreground'} onClick={() => setActiveTab('bilan')}><BarChart3 /></Button>
+        {user.role === 'admin' ? (
+          <Button variant="ghost" size="icon" className={activeTab === 'bilan' ? 'text-primary' : 'text-muted-foreground'} onClick={() => setActiveTab('bilan')}><BarChart3 /></Button>
+        ) : (
+          <Button variant="ghost" size="icon" className={activeTab === 'mycash' ? 'text-primary' : 'text-muted-foreground'} onClick={() => setActiveTab('mycash')}><BarChart3 /></Button>
+        )}
       </footer>
     </div>
   );

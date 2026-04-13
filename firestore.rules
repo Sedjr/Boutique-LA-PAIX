@@ -41,13 +41,15 @@ service cloud.firestore {
     }
 
     function getUser() {
-      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data;
+      let path = /databases/$(database)/documents/users/$(request.auth.uid);
+      return exists(path) ? get(path).data : null;
     }
 
     function isAdmin() {
+      let user = getUser();
       return isAuthenticated() && 
         (request.auth.token.email == "eulogehoussou9@gmail.com" || 
-         getUser().role == 'admin');
+         (user != null && user.role == 'admin'));
     }
 
     function isTimeLocked() {
@@ -69,9 +71,10 @@ service cloud.firestore {
     }
 
     function isApprovedStaff() {
+      let user = getUser();
       return isAuthenticated() && 
         (request.auth.token.email == "eulogehoussou9@gmail.com" || 
-         (getUser().isApproved == true && getUser().isActive == true));
+         (user != null && user.isApproved == true && user.isActive == true));
     }
 
     function isValidOrder(data) {
