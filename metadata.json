@@ -1,0 +1,5 @@
+{
+  "name": "Pressing La Paix - Gestion Secrétariat",
+  "description": "Outil de gestion de commandes simplifié pour le secrétariat du Pressing La Paix, incluant le suivi du linge, le calcul automatique des paiements et l'enregistrement de notes vocales.",
+  "requestFramePermissions": ["microphone"]
+}

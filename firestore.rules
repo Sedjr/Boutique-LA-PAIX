@@ -1,0 +1,139 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // ===============================================================
+    // Assumed Data Model
+    // ===============================================================
+    //
+    // Collection: orders
+    // Document ID: auto-generated
+    // Fields:
+    //   - numeroFacture: string (required, immutable after create)
+    //   - telephone: string (required)
+    //   - montantTotal: number (required)
+    //   - avancePayee: number (required)
+    //   - resteAPayer: number (required)
+    //   - typeService: string (required, enum: Lavage, Repassage, Teinture)
+    //   - modePaiement: string (required, enum: Espèces, MoMo Pay)
+    //   - transactionId: string (optional)
+    //   - dateDepot: string (required)
+    //   - dateRetraitPrevue: string (required)
+    //   - isExpress: bool (required)
+    //   - noteVocaleUrl: string (optional)
+    //   - createdAt: timestamp (required)
+    //   - updatedAt: timestamp (required)
+    //
+    // Collection: users
+    // Document ID: auth.uid
+    // Fields:
+    //   - email: string (required)
+    //   - role: string (required, enum: admin, secretaire)
+    //   - displayName: string (optional)
+    //
+    // ===============================================================
+
+    // ===============================================================
+    // Helper Functions
+    // ===============================================================
+    
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    function getUser() {
+      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data;
+    }
+
+    function isAdmin() {
+      return isAuthenticated() && 
+        (request.auth.token.email == "eulogehoussou9@gmail.com" || 
+         getUser().role == 'admin');
+    }
+
+    function isTimeLocked() {
+      return get(/databases/$(database)/documents/settings/global).data.timeLockEnabled == true;
+    }
+
+    function isWithinServiceHours() {
+      // Service hours: 06:00 - 22:30
+      // Note: Firestore request.time is UTC. 
+      // We assume the app operates in a specific timezone, but for rules we check raw hours.
+      let hour = request.time.hours();
+      let minute = request.time.minutes();
+      let time = hour * 60 + minute;
+      return time >= (6 * 60) && time <= (22 * 60 + 30);
+    }
+
+    function canPerformAction() {
+      return isAdmin() || !isTimeLocked() || isWithinServiceHours();
+    }
+
+    function isApprovedStaff() {
+      return isAuthenticated() && 
+        (request.auth.token.email == "eulogehoussou9@gmail.com" || 
+         (getUser().isApproved == true && getUser().isActive == true));
+    }
+
+    function isValidOrder(data) {
+      return data.numeroFacture is string && data.numeroFacture.size() > 0 &&
+             data.telephone is string && data.telephone.size() >= 8 &&
+             data.nomClient is string && data.nomClient.size() > 0 &&
+             data.civilite in ['Monsieur', 'Dame'] &&
+             data.montantTotal is number && data.montantTotal >= 0 &&
+             data.avancePayee is number && data.avancePayee >= 0 &&
+             data.reduction is number && data.reduction >= 0 &&
+             data.resteAPayer is number &&
+             data.typeService in ['Lavage', 'Repassage', 'Teinture'] &&
+             data.modePaiement in ['Espèces', 'MoMo Pay'] &&
+             data.dateDepot is string &&
+             data.dateRetraitPrevue is string &&
+             data.isExpress is bool &&
+             data.boutiqueSource in ['Senade', 'Gankpodo'] &&
+             (!('transactionId' in data) || data.transactionId is string) &&
+             (!('noteVocaleUrl' in data) || data.noteVocaleUrl is string);
+    }
+
+    function isValidMovement(data) {
+      return data.typeMouvement in ['Dépense Boutique', 'Prélèvement Patron', 'Recette'] &&
+             data.montant is number && data.montant >= 0 &&
+             data.description is string &&
+             data.boutiqueSource in ['Senade', 'Gankpodo'] &&
+             data.createdBy == request.auth.uid;
+    }
+
+    // ===============================================================
+    // Rules
+    // ===============================================================
+
+    match /users/{userId} {
+      allow read: if isAuthenticated();
+      allow create: if isAuthenticated() && request.auth.uid == userId;
+      allow update: if isAuthenticated() && (request.auth.uid == userId || isAdmin());
+      allow delete: if isAdmin();
+    }
+
+    match /orders/{orderId} {
+      allow read: if isApprovedStaff();
+      allow create: if isApprovedStaff() && isValidOrder(request.resource.data) && canPerformAction();
+      allow update: if isApprovedStaff() && isValidOrder(request.resource.data) && canPerformAction();
+      allow delete: if isAdmin();
+    }
+
+    match /cashMovements/{movementId} {
+      allow read: if isApprovedStaff();
+      allow create: if isApprovedStaff() && isValidMovement(request.resource.data) && canPerformAction();
+      allow update: if isAdmin();
+      allow delete: if isAdmin();
+    }
+    match /settings/{settingId} {
+      allow read: if isAuthenticated();
+      allow write: if isAdmin();
+    }
+    match /notifications/{notificationId} {
+      allow read: if isAdmin();
+      allow create: if isAuthenticated();
+      allow update: if isAdmin();
+      allow delete: if isAdmin();
+    }
+  }
+}

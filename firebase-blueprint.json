@@ -1,0 +1,159 @@
+{
+  "entities": {
+    "Order": {
+      "title": "Order",
+      "description": "Une commande de pressing",
+      "type": "object",
+      "properties": {
+        "numeroFacture": {
+          "type": "string",
+          "description": "Numéro de facture du carnet papier"
+        },
+        "telephone": {
+          "type": "string",
+          "description": "Numéro WhatsApp du client"
+        },
+        "nomClient": {
+          "type": "string",
+          "description": "Nom complet du client"
+        },
+        "civilite": {
+          "type": "string",
+          "enum": ["Monsieur", "Dame"],
+          "description": "Civilité du client"
+        },
+        "montantTotal": {
+          "type": "number",
+          "description": "Montant total de la prestation"
+        },
+        "avancePayee": {
+          "type": "number",
+          "description": "Avance déjà réglée"
+        },
+        "resteAPayer": {
+          "type": "number",
+          "description": "Reste à payer (calculé)"
+        },
+        "typeService": {
+          "type": "string",
+          "enum": ["Lavage", "Repassage", "Teinture"],
+          "description": "Type de service demandé"
+        },
+        "modePaiement": {
+          "type": "string",
+          "enum": ["Espèces", "MoMo Pay"],
+          "description": "Moyen de paiement utilisé"
+        },
+        "transactionId": {
+          "type": "string",
+          "description": "ID de transaction MoMo Pay (facultatif)"
+        },
+        "dateDepot": {
+          "type": "string",
+          "description": "Date de dépôt du linge"
+        },
+        "dateRetraitPrevue": {
+          "type": "string",
+          "description": "Date de retrait prévue"
+        },
+        "isExpress": {
+          "type": "boolean",
+          "description": "Commande express"
+        },
+        "boutiqueSource": {
+          "type": "string",
+          "enum": ["Senade", "Gankpodo"],
+          "description": "Boutique d'origine"
+        },
+        "noteVocaleUrl": {
+          "type": "string",
+          "description": "URL de la note vocale stockée"
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "required": ["numeroFacture", "telephone", "nomClient", "civilite", "montantTotal", "avancePayee", "typeService", "modePaiement", "dateDepot", "dateRetraitPrevue", "boutiqueSource"]
+    },
+    "CashMovement": {
+      "title": "CashMovement",
+      "description": "Mouvement de caisse (dépense, prélèvement, recette)",
+      "type": "object",
+      "properties": {
+        "typeMouvement": {
+          "type": "string",
+          "enum": ["Dépense Boutique", "Prélèvement Patron", "Recette"]
+        },
+        "montant": { "type": "number" },
+        "description": { "type": "string" },
+        "dateHeure": { "type": "string", "format": "date-time" },
+        "boutiqueSource": { "type": "string", "enum": ["Senade", "Gankpodo"] },
+        "createdBy": { "type": "string" }
+      },
+      "required": ["typeMouvement", "montant", "description", "dateHeure", "boutiqueSource", "createdBy"]
+    },
+    "User": {
+      "title": "User",
+      "description": "Utilisateur du système (Admin ou Secrétaire)",
+      "type": "object",
+      "properties": {
+        "email": { "type": "string" },
+        "role": { "type": "string", "enum": ["admin", "secretaire"] },
+        "boutiqueAssignee": { "type": "string", "enum": ["Senade", "Gankpodo", "Toutes"] },
+        "isApproved": { "type": "boolean", "description": "Compte approuvé par l'admin" },
+        "isActive": { "type": "boolean", "description": "Compte actif ou suspendu" },
+        "hasAcceptedContract": { "type": "boolean", "description": "A accepté le contrat de confiance" },
+        "displayName": { "type": "string" }
+      },
+      "required": ["email", "role", "boutiqueAssignee", "isApproved", "isActive", "hasAcceptedContract"]
+    },
+    "AppSettings": {
+      "title": "AppSettings",
+      "description": "Paramètres globaux de l'application",
+      "type": "object",
+      "properties": {
+        "timeLockEnabled": { "type": "boolean", "description": "Verrouillage horaire actif" }
+      },
+      "required": ["timeLockEnabled"]
+    },
+    "Notification": {
+      "title": "Notification",
+      "description": "Alerte système pour l'administrateur",
+      "type": "object",
+      "properties": {
+        "type": { "type": "string", "enum": ["LARGE_ORDER", "NEW_USER"] },
+        "message": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "read": { "type": "boolean" }
+      },
+      "required": ["type", "message", "createdAt", "read"]
+    }
+  },
+  "firestore": {
+    "/orders/{orderId}": {
+      "schema": "Order",
+      "description": "Collection des commandes"
+    },
+    "/cashMovements/{movementId}": {
+      "schema": "CashMovement",
+      "description": "Flux de caisse"
+    },
+    "/users/{userId}": {
+      "schema": "User",
+      "description": "Profils utilisateurs"
+    },
+    "/notifications/{notificationId}": {
+      "schema": "Notification",
+      "description": "Alertes système"
+    },
+    "/settings/{settingId}": {
+      "schema": "AppSettings",
+      "description": "Paramètres de l'application"
+    }
+  }
+}
