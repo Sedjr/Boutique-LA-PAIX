@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { auth, db, handleFirestoreError, OperationType } from './firebase';
 import { onAuthStateChanged, signInWithPopup, GoogleAuthProvider, signOut } from 'firebase/auth';
 import { doc, getDoc, setDoc, collection, addDoc, serverTimestamp, onSnapshot } from 'firebase/firestore';
-import { UserProfile, Order } from './types';
+import { UserProfile, Order, ConnectionLog } from './types';
 import { OrderList } from './components/OrderList';
 import { OrderForm } from './components/OrderForm';
 import { FinancialBilan } from './components/FinancialBilan';
@@ -12,11 +12,14 @@ import { MyCash } from './components/MyCash';
 import { ContractView } from './components/ContractView';
 import { TimeLockView } from './components/TimeLockView';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent, CardHeader, CardTitle, CardDescription, CardFooter } from '@/components/ui/card';
 import { Toaster } from '@/components/ui/sonner';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { LogIn, LogOut, Plus, WashingMachine, LayoutDashboard, Settings, User as UserIcon, BarChart3, ListTodo, Wallet, Users as UsersIcon, Store } from 'lucide-react';
+import { LogIn, LogOut, Plus, WashingMachine, LayoutDashboard, Settings, User as UserIcon, BarChart3, ListTodo, Wallet, Users as UsersIcon, Store, AlertTriangle, Monitor } from 'lucide-react';
 import { toast } from 'sonner';
+
+// Generate a unique session ID for this browser instance
+const SESSION_ID = crypto.randomUUID();
 
 export default function App() {
   const [user, setUser] = useState<UserProfile | null>(null);
@@ -25,6 +28,48 @@ export default function App() {
   const [editingOrder, setEditingOrder] = useState<Order | undefined>();
   const [activeTab, setActiveTab] = useState('orders');
   const [timeLockEnabled, setTimeLockEnabled] = useState(true);
+  const [sessionConflict, setSessionConflict] = useState<UserProfile | null>(null);
+
+  const getDeviceInfo = () => {
+    const ua = navigator.userAgent;
+    if (/android/i.test(ua)) return "Android Device";
+    if (/iPad|iPhone|iPod/.test(ua)) return "iOS Device";
+    if (/Windows/i.test(ua)) return "Windows PC";
+    if (/Mac/i.test(ua)) return "MacBook/iMac";
+    return "Appareil Inconnu";
+  };
+
+  const logConnection = async (email: string, action: ConnectionLog['action']) => {
+    try {
+      await addDoc(collection(db, 'connectionLogs'), {
+        email,
+        action,
+        dateHeure: serverTimestamp(),
+        deviceInfo: getDeviceInfo()
+      });
+
+      if (action === 'Tentative Refusée') {
+        // Trigger security alert notification for admin
+        await addDoc(collection(db, 'notifications'), {
+          type: 'SECURITY_ALERT',
+          message: `Alerte : Tentative de connexion suspecte sur le compte ${email} depuis un appareil ${getDeviceInfo()} le ${new Date().toLocaleString()}.`,
+          createdAt: serverTimestamp(),
+          read: false
+        });
+      }
+    } catch (err) {
+      console.error("Error logging connection:", err);
+    }
+  };
+
+  const handleLogout = async () => {
+    if (user) {
+      await logConnection(user.email, 'Déconnexion');
+      await setDoc(doc(db, 'users', user.uid), { currentSessionId: null }, { merge: true });
+    }
+    signOut(auth);
+    setSessionConflict(null);
+  };
 
   useEffect(() => {
     // Real-time sync for global settings
@@ -60,18 +105,44 @@ export default function App() {
     const unsubscribeUser = onSnapshot(userRef, async (docSnap) => {
       if (docSnap.exists()) {
         const data = docSnap.data() as UserProfile;
-        if (!data.boutiqueAssignee || data.isApproved === undefined || data.isActive === undefined || data.hasAcceptedContract === undefined) {
-          const updatedData = {
-            ...data,
-            boutiqueAssignee: data.boutiqueAssignee || (data.role === 'admin' ? 'Toutes' : 'Senade'),
-            isApproved: data.isApproved ?? (data.role === 'admin'),
-            isActive: data.isActive ?? true,
-            hasAcceptedContract: data.hasAcceptedContract ?? (data.role === 'admin')
-          };
-          await setDoc(userRef, updatedData, { merge: true });
-          setUser(updatedData);
-        } else {
-          setUser(data);
+
+        // Session Control Logic
+        if (data.currentSessionId && data.currentSessionId !== SESSION_ID) {
+          // If we are already logged in but the ID changed, force logout
+          if (user && user.currentSessionId === SESSION_ID) {
+            toast.error("Session expirée : Connecté sur un autre appareil.");
+            handleLogout();
+            return;
+          }
+          // If we are just logging in and there's a conflict
+          if (!user) {
+            setSessionConflict(data);
+            setLoading(false);
+            return;
+          }
+        }
+
+        // If no conflict or we are taking over
+        if (!data.currentSessionId || data.currentSessionId === SESSION_ID) {
+          if (!data.currentSessionId) {
+            await setDoc(userRef, { currentSessionId: SESSION_ID }, { merge: true });
+            await logConnection(data.email, 'Connexion');
+          }
+          
+          if (!data.boutiqueAssignee || data.isApproved === undefined || data.isActive === undefined || data.hasAcceptedContract === undefined) {
+            const updatedData = {
+              ...data,
+              boutiqueAssignee: data.boutiqueAssignee || (data.role === 'admin' ? 'Toutes' : 'Senade'),
+              isApproved: data.isApproved ?? (data.role === 'admin'),
+              isActive: data.isActive ?? true,
+              hasAcceptedContract: data.hasAcceptedContract ?? (data.role === 'admin'),
+              currentSessionId: SESSION_ID
+            };
+            await setDoc(userRef, updatedData, { merge: true });
+            setUser(updatedData);
+          } else {
+            setUser(data);
+          }
         }
       } else {
         const firebaseUser = auth.currentUser!;
@@ -104,7 +175,7 @@ export default function App() {
     });
 
     return () => unsubscribeUser();
-  }, [auth.currentUser?.uid]);
+  }, [auth.currentUser?.uid, user?.currentSessionId]);
 
   const handleLogin = async () => {
     const provider = new GoogleAuthProvider();
@@ -117,7 +188,25 @@ export default function App() {
     }
   };
 
-  const handleLogout = () => signOut(auth);
+  const handleTakeOverSession = async () => {
+    if (!auth.currentUser || !sessionConflict) return;
+    try {
+      const userRef = doc(db, 'users', auth.currentUser.uid);
+      await setDoc(userRef, { currentSessionId: SESSION_ID }, { merge: true });
+      await logConnection(sessionConflict.email, 'Connexion');
+      setSessionConflict(null);
+      // The onSnapshot will trigger and set the user
+    } catch (err) {
+      toast.error("Erreur lors de la reprise de session");
+    }
+  };
+
+  const handleRejectSession = async () => {
+    if (sessionConflict) {
+      await logConnection(sessionConflict.email, 'Tentative Refusée');
+    }
+    handleLogout();
+  };
 
   const handleAcceptContract = async () => {
     if (!user) return;
@@ -159,6 +248,37 @@ export default function App() {
           <WashingMachine className="h-12 w-12 animate-bounce text-primary" />
           <p className="text-muted-foreground font-medium">Chargement de l'espace de travail...</p>
         </div>
+      </div>
+    );
+  }
+
+  if (sessionConflict) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-muted/30 p-4">
+        <Card className="w-full max-w-md shadow-2xl border-2 border-orange-200">
+          <CardHeader className="text-center space-y-2">
+            <div className="mx-auto bg-orange-100 w-20 h-20 rounded-full flex items-center justify-center mb-4">
+              <AlertTriangle className="h-10 w-10 text-orange-600" />
+            </div>
+            <CardTitle className="text-2xl font-black tracking-tight">SESSION ACTIVE</CardTitle>
+            <CardDescription>
+              Ce compte est déjà connecté sur un autre appareil.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="bg-muted p-4 rounded-lg flex items-start gap-3">
+              <Monitor className="h-5 w-5 text-muted-foreground mt-0.5" />
+              <div className="text-sm">
+                <p className="font-bold">Appareil actif détecté</p>
+                <p className="text-muted-foreground">Voulez-vous déconnecter l'autre appareil et continuer ici ?</p>
+              </div>
+            </div>
+          </CardContent>
+          <CardFooter className="flex flex-col gap-2">
+            <Button onClick={handleTakeOverSession} className="w-full h-12 font-bold">Déconnecter l'autre et continuer</Button>
+            <Button onClick={handleRejectSession} variant="outline" className="w-full h-12 font-bold">Annuler</Button>
+          </CardFooter>
+        </Card>
       </div>
     );
   }

@@ -115,6 +115,11 @@ service cloud.firestore {
       allow delete: if isAdmin();
     }
 
+    match /connectionLogs/{logId} {
+      allow read: if isAdmin();
+      allow create: if isAuthenticated();
+    }
+
     match /orders/{orderId} {
       allow read: if isApprovedStaff();
       allow create: if isApprovedStaff() && isValidOrder(request.resource.data) && canPerformAction();

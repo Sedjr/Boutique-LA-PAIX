@@ -44,7 +44,16 @@ export interface UserProfile {
   isApproved: boolean;
   isActive: boolean;
   hasAcceptedContract: boolean;
+  currentSessionId?: string;
   displayName?: string;
+}
+
+export interface ConnectionLog {
+  id?: string;
+  email: string;
+  action: 'Connexion' | 'Déconnexion' | 'Tentative Refusée';
+  dateHeure: any;
+  deviceInfo: string;
 }
 
 export interface AppSettings {

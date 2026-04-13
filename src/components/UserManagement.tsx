@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { db, handleFirestoreError, OperationType } from '../firebase';
 import { collection, query, onSnapshot, doc, updateDoc, getDoc } from 'firebase/firestore';
-import { UserProfile, Boutique, UserRole } from '../types';
+import { UserProfile, Boutique, UserRole, ConnectionLog } from '../types';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
@@ -10,10 +10,12 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Switch } from '@/components/ui/switch';
 import { Label } from '@/components/ui/label';
 import { toast } from 'sonner';
-import { Users, Shield, Store, CheckCircle2, XCircle, UserCheck, UserMinus, Clock, Lock, Unlock } from 'lucide-react';
+import { Users, Shield, Store, CheckCircle2, XCircle, UserCheck, UserMinus, Clock, Lock, Unlock, History, Monitor } from 'lucide-react';
+import { limit, orderBy } from 'firebase/firestore';
 
 export const UserManagement: React.FC = () => {
   const [users, setUsers] = useState<UserProfile[]>([]);
+  const [logs, setLogs] = useState<ConnectionLog[]>([]);
   const [loading, setLoading] = useState(true);
   const [timeLockEnabled, setTimeLockEnabled] = useState(true);
 
@@ -28,7 +30,7 @@ export const UserManagement: React.FC = () => {
     fetchSettings();
 
     const q = query(collection(db, 'users'));
-    const unsubscribe = onSnapshot(q, (snapshot) => {
+    const unsubscribeUsers = onSnapshot(q, (snapshot) => {
       const data = snapshot.docs.map(doc => ({
         ...doc.data()
       })) as UserProfile[];
@@ -38,7 +40,25 @@ export const UserManagement: React.FC = () => {
       handleFirestoreError(error, OperationType.LIST, 'users');
     });
 
-    return () => unsubscribe();
+    const logsQuery = query(
+      collection(db, 'connectionLogs'),
+      orderBy('dateHeure', 'desc'),
+      limit(20)
+    );
+    const unsubscribeLogs = onSnapshot(logsQuery, (snapshot) => {
+      const data = snapshot.docs.map(doc => ({
+        id: doc.id,
+        ...doc.data()
+      })) as ConnectionLog[];
+      setLogs(data);
+    }, (error) => {
+      handleFirestoreError(error, OperationType.LIST, 'connectionLogs');
+    });
+
+    return () => {
+      unsubscribeUsers();
+      unsubscribeLogs();
+    };
   }, []);
 
   const handleUpdateUser = async (uid: string, updates: Partial<UserProfile>) => {
@@ -195,6 +215,52 @@ export const UserManagement: React.FC = () => {
                   </TableCell>
                 </TableRow>
               )}
+            </TableBody>
+          </Table>
+        </CardContent>
+      </Card>
+
+      <Card className="border-2 border-muted">
+        <CardHeader className="pb-2">
+          <CardTitle className="text-sm font-black uppercase tracking-widest flex items-center gap-2">
+            <History className="h-4 w-4" /> Historique Accès (Audit Trail)
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="p-0">
+          <Table>
+            <TableHeader>
+              <TableRow className="bg-muted/30">
+                <TableHead className="h-10 text-[10px] uppercase font-bold">Utilisateur</TableHead>
+                <TableHead className="h-10 text-[10px] uppercase font-bold">Action</TableHead>
+                <TableHead className="h-10 text-[10px] uppercase font-bold">Appareil</TableHead>
+                <TableHead className="h-10 text-[10px] uppercase font-bold">Date/Heure</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {logs.map((log) => (
+                <TableRow key={log.id} className="hover:bg-muted/10">
+                  <TableCell className="py-2 text-xs font-medium">{log.email}</TableCell>
+                  <TableCell className="py-2">
+                    <Badge 
+                      variant="outline" 
+                      className={`text-[10px] px-1.5 py-0 ${
+                        log.action === 'Connexion' ? 'bg-green-50 text-green-700 border-green-200' : 
+                        log.action === 'Déconnexion' ? 'bg-slate-50 text-slate-600 border-slate-200' : 
+                        'bg-red-50 text-red-700 border-red-200'
+                      }`}
+                    >
+                      {log.action}
+                    </Badge>
+                  </TableCell>
+                  <TableCell className="py-2 text-[10px] text-muted-foreground flex items-center gap-1">
+                    <Monitor className="h-3 w-3" />
+                    {log.deviceInfo}
+                  </TableCell>
+                  <TableCell className="py-2 text-[10px] text-muted-foreground">
+                    {log.dateHeure?.toDate().toLocaleString('fr-FR')}
+                  </TableCell>
+                </TableRow>
+              ))}
             </TableBody>
           </Table>
         </CardContent>
