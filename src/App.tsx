@@ -24,6 +24,7 @@ const SESSION_ID = crypto.randomUUID();
 export default function App() {
   const [user, setUser] = useState<UserProfile | null>(null);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [showForm, setShowForm] = useState(false);
   const [editingOrder, setEditingOrder] = useState<Order | undefined>();
   const [activeTab, setActiveTab] = useState('orders');
@@ -86,8 +87,10 @@ export default function App() {
   };
 
   useEffect(() => {
+    console.log("Étape 1 : Initialisation des écouteurs globaux...");
     // Real-time sync for global settings
     const unsubscribeSettings = onSnapshot(doc(db, 'settings', 'global'), (snapshot) => {
+      console.log("Étape 2 : Paramètres globaux reçus.");
       if (snapshot.exists()) {
         setTimeLockEnabled(snapshot.data().timeLockEnabled);
       }
@@ -95,15 +98,26 @@ export default function App() {
       console.warn("Settings listener failed (likely not authenticated):", err.message);
     });
 
+    // Timeout for loading
+    const loadingTimeout = setTimeout(() => {
+      if (loading) {
+        console.error("Étape X : Timeout de chargement (10s dépassées)");
+        setLoadError("Le chargement prend trop de temps. Vérifiez votre connexion ou réessayez.");
+        setLoading(false);
+      }
+    }, 10000);
+
     // Periodic check every 5 minutes
     const interval = setInterval(() => {
       setUser(prev => prev ? { ...prev } : null);
     }, 300000);
 
     const unsubscribeAuth = onAuthStateChanged(auth, (firebaseUser) => {
+      console.log("Étape 3 : État d'authentification changé :", firebaseUser ? "Connecté" : "Déconnecté");
       if (!firebaseUser) {
         setUser(null);
         setLoading(false);
+        clearTimeout(loadingTimeout);
       }
     });
 
@@ -111,87 +125,103 @@ export default function App() {
       unsubscribeSettings();
       unsubscribeAuth();
       clearInterval(interval);
+      clearTimeout(loadingTimeout);
     };
   }, []);
 
   useEffect(() => {
     if (!auth.currentUser) return;
 
+    console.log("Étape 4 : Récupération du profil utilisateur pour UID :", auth.currentUser.uid);
     const userRef = doc(db, 'users', auth.currentUser.uid);
     const unsubscribeUser = onSnapshot(userRef, async (docSnap) => {
-      if (docSnap.exists()) {
-        const data = docSnap.data() as UserProfile;
+      try {
+        console.log("Étape 5 : Données du profil reçues.");
+        if (docSnap.exists()) {
+          const data = docSnap.data() as UserProfile;
+          console.log("Étape 6 : Rôle détecté :", data.role);
 
-        // Session Control Logic
-        const isSecretaire = data.role === 'secretaire';
-        if (isSecretaire && data.currentSessionId && data.currentSessionId !== SESSION_ID) {
-          // If we are already logged in but the ID changed, force logout
-          if (user && user.currentSessionId === SESSION_ID) {
-            toast.error("Session expirée : Connecté sur un autre appareil.");
-            handleLogout();
-            return;
-          }
-          // If we are just logging in and there's a conflict
-          if (!user) {
-            setSessionConflict(data);
-            setLoading(false);
-            return;
-          }
-        }
-
-        // If no conflict OR if Admin (bypass)
-        if (!isSecretaire || !data.currentSessionId || data.currentSessionId === SESSION_ID) {
-          if (data.currentSessionId !== SESSION_ID) {
-            // For Admin or new session, update ID and log connection
-            // We only do this if we haven't initialized the local user state yet
+          // Session Control Logic
+          const isSecretaire = data.role === 'secretaire';
+          if (isSecretaire && data.currentSessionId && data.currentSessionId !== SESSION_ID) {
+            console.log("Étape 7a : Conflit de session détecté.");
+            // If we are already logged in but the ID changed, force logout
+            if (user && user.currentSessionId === SESSION_ID) {
+              toast.error("Session expirée : Connecté sur un autre appareil.");
+              handleLogout();
+              return;
+            }
+            // If we are just logging in and there's a conflict
             if (!user) {
-              await setDoc(userRef, { currentSessionId: SESSION_ID }, { merge: true });
-              await logConnection(data.email, 'Connexion');
+              setSessionConflict(data);
+              setLoading(false);
+              return;
             }
           }
-          
-          if (!data.boutiqueAssignee || data.isApproved === undefined || data.isActive === undefined || data.hasAcceptedContract === undefined) {
-            const updatedData = {
-              ...data,
-              boutiqueAssignee: data.boutiqueAssignee || (data.role === 'admin' ? 'Toutes' : 'Senade'),
-              isApproved: data.isApproved ?? (data.role === 'admin'),
-              isActive: data.isActive ?? true,
-              hasAcceptedContract: data.hasAcceptedContract ?? (data.role === 'admin'),
-              currentSessionId: SESSION_ID
-            };
-            await setDoc(userRef, updatedData, { merge: true });
-            setUser(updatedData);
-          } else {
-            setUser(data);
+
+          // If no conflict OR if Admin (bypass)
+          if (!isSecretaire || !data.currentSessionId || data.currentSessionId === SESSION_ID) {
+            console.log("Étape 7b : Validation de la session...");
+            if (data.currentSessionId !== SESSION_ID) {
+              // For Admin or new session, update ID and log connection
+              // We only do this if we haven't initialized the local user state yet
+              if (!user) {
+                await setDoc(userRef, { currentSessionId: SESSION_ID }, { merge: true });
+                await logConnection(data.email, 'Connexion');
+              }
+            }
+            
+            if (!data.boutiqueAssignee || data.isApproved === undefined || data.isActive === undefined || data.hasAcceptedContract === undefined) {
+              console.log("Étape 8 : Initialisation des champs manquants du profil...");
+              const updatedData = {
+                ...data,
+                boutiqueAssignee: data.boutiqueAssignee || (data.role === 'admin' ? 'Toutes' : 'Senade'),
+                isApproved: data.isApproved ?? (data.role === 'admin'),
+                isActive: data.isActive ?? true,
+                hasAcceptedContract: data.hasAcceptedContract ?? (data.role === 'admin'),
+                currentSessionId: SESSION_ID
+              };
+              await setDoc(userRef, updatedData, { merge: true });
+              setUser(updatedData);
+            } else {
+              setUser(data);
+            }
           }
+        } else {
+          console.log("Étape 5b : Création d'un nouveau profil utilisateur...");
+          const firebaseUser = auth.currentUser!;
+          const isOwner = firebaseUser.email === 'eulogehoussou9@gmail.com';
+          const newProfile: UserProfile = {
+            uid: firebaseUser.uid,
+            email: firebaseUser.email || '',
+            role: isOwner ? 'admin' : 'secretaire',
+            boutiqueAssignee: isOwner ? 'Toutes' : 'Senade',
+            isApproved: isOwner,
+            isActive: true,
+            hasAcceptedContract: isOwner,
+            displayName: firebaseUser.displayName || ''
+          };
+          await setDoc(userRef, newProfile);
+          
+          await addDoc(collection(db, 'notifications'), {
+            type: 'NEW_USER',
+            message: `Nouvel utilisateur inscrit: ${firebaseUser.email}`,
+            createdAt: serverTimestamp(),
+            read: false
+          });
+          
+          setUser(newProfile);
         }
-      } else {
-        const firebaseUser = auth.currentUser!;
-        const isOwner = firebaseUser.email === 'eulogehoussou9@gmail.com';
-        const newProfile: UserProfile = {
-          uid: firebaseUser.uid,
-          email: firebaseUser.email || '',
-          role: isOwner ? 'admin' : 'secretaire',
-          boutiqueAssignee: isOwner ? 'Toutes' : 'Senade',
-          isApproved: isOwner,
-          isActive: true,
-          hasAcceptedContract: isOwner,
-          displayName: firebaseUser.displayName || ''
-        };
-        await setDoc(userRef, newProfile);
-        
-        await addDoc(collection(db, 'notifications'), {
-          type: 'NEW_USER',
-          message: `Nouvel utilisateur inscrit: ${firebaseUser.email}`,
-          createdAt: serverTimestamp(),
-          read: false
-        });
-        
-        setUser(newProfile);
+        console.log("Étape 9 : Chargement terminé avec succès.");
+        setLoading(false);
+      } catch (err) {
+        console.error("Erreur critique lors de la récupération du profil :", err);
+        setLoadError("Une erreur est survenue lors de la récupération de votre profil.");
+        setLoading(false);
       }
-      setLoading(false);
     }, (err) => {
       console.error("Error listening to user profile:", err);
+      setLoadError("Impossible de se connecter à la base de données des utilisateurs.");
       setLoading(false);
     });
 
@@ -268,7 +298,28 @@ export default function App() {
         <div className="flex flex-col items-center gap-4">
           <WashingMachine className="h-12 w-12 animate-bounce text-primary" />
           <p className="text-muted-foreground font-medium">Chargement de l'espace de travail...</p>
+          <p className="text-[10px] text-muted-foreground/50 uppercase tracking-widest">Vérification de la session en cours</p>
         </div>
+      </div>
+    );
+  }
+
+  if (loadError) {
+    return (
+      <div className="h-screen w-screen flex items-center justify-center bg-background p-4">
+        <Card className="w-full max-w-md border-2 border-destructive/20 shadow-2xl">
+          <CardHeader className="text-center space-y-2">
+            <div className="mx-auto bg-destructive/10 w-20 h-20 rounded-full flex items-center justify-center mb-4">
+              <AlertTriangle className="h-10 w-10 text-destructive" />
+            </div>
+            <CardTitle className="text-2xl font-black tracking-tight text-destructive uppercase">ERREUR DE CHARGEMENT</CardTitle>
+            <p className="text-muted-foreground">{loadError}</p>
+          </CardHeader>
+          <CardContent className="pt-6 space-y-4">
+            <Button onClick={() => window.location.reload()} className="w-full h-12 font-bold">Réessayer</Button>
+            <Button onClick={handleLogout} variant="outline" className="w-full h-12 font-bold">Se déconnecter</Button>
+          </CardContent>
+        </Card>
       </div>
     );
   }
