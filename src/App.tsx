@@ -42,19 +42,20 @@ const SuspensionOverlay = ({ onLogout }: { onLogout: () => void }) => {
       <div className="bg-destructive/10 p-6 rounded-full mb-6 animate-pulse">
         <Lock className="h-16 w-16 text-destructive" />
       </div>
-      <h1 className="text-3xl font-black mb-4 text-destructive">COMPTE SUSPENDU</h1>
+      <h1 className="text-3xl font-black mb-4 text-destructive">⚠️ COMPTE SUSPENDU</h1>
       <Card className="max-w-md border-2 border-destructive/20 shadow-xl">
         <CardContent className="pt-6 space-y-4">
           <p className="text-muted-foreground text-lg font-bold">
-            Votre compte a été suspendu. Veuillez contacter votre administrateur pour plus d'informations.
+            Votre compte a été suspendu. Veuillez contacter votre administrateur.
           </p>
           <div className="bg-primary/5 p-4 rounded-lg border border-primary/10">
             <p className="text-sm font-black text-primary uppercase tracking-wider mb-1">Contact Support</p>
             <p className="text-xl font-black">+229 01 62 06 03 07</p>
           </div>
           <div className="pt-4 border-t">
-            <p className="text-sm text-muted-foreground mb-2">Déconnexion automatique dans :</p>
-            <div className="text-4xl font-black text-destructive">{countdown}s</div>
+            <p className="text-sm text-muted-foreground mb-2 font-bold">
+              Déconnexion automatique dans {countdown} secondes...
+            </p>
           </div>
           <Button onClick={onLogout} variant="outline" className="w-full h-12 font-bold gap-2 mt-4">
             <LogOut className="h-5 w-5" />
@@ -69,6 +70,7 @@ const SuspensionOverlay = ({ onLogout }: { onLogout: () => void }) => {
 export default function App() {
   const [user, setUser] = useState<UserProfile | null>(null);
   const [loading, setLoading] = useState(true);
+  const [isSuspended, setIsSuspended] = useState(false);
   const [timeoutReached, setTimeoutReached] = useState(false);
   const [showForm, setShowForm] = useState(false);
   const [editingOrder, setEditingOrder] = useState<Order | undefined>();
@@ -128,7 +130,15 @@ export default function App() {
         const userRef = doc(db, 'users', firebaseUser.uid);
         unsubscribeUser = onSnapshot(userRef, async (docSnap) => {
           if (docSnap.exists()) {
-            setUser(docSnap.data() as UserProfile);
+            const userData = docSnap.data() as UserProfile;
+            setUser(userData);
+            
+            // Suspension Detection
+            if (!userData.isActive && userData.role !== 'admin') {
+              setIsSuspended(true);
+            } else {
+              setIsSuspended(false);
+            }
           } else {
             const isAdmin = firebaseUser.email === 'eulogehoussou9@gmail.com';
             const newUser: UserProfile = {
@@ -228,14 +238,19 @@ export default function App() {
             <Button 
               variant="destructive" 
               onClick={handleReset}
-              className="font-black h-12 px-8 shadow-lg shadow-destructive/20"
+              className="font-black h-12 px-8 shadow-lg shadow-destructive/20 uppercase"
             >
-              RÉINITIALISER L'APPLICATION
+              Réinitialiser la session
             </Button>
           </div>
         )}
       </div>
     );
+  }
+
+  // Suspension Overlay (FORCED)
+  if (isSuspended) {
+    return <SuspensionOverlay onLogout={handleLogout} />;
   }
 
   // Time-based access control (Admins bypass this)

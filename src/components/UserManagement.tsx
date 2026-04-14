@@ -99,6 +99,9 @@ export const UserManagement: React.FC = () => {
   const handleDeleteUser = async (uid: string, email: string) => {
     if (!window.confirm(`Voulez-vous supprimer définitivement le compte de ${email} ?`)) return;
     
+    // Optimistic update for immediate feedback
+    setUsers(prev => prev.filter(u => u.uid !== uid));
+    
     try {
       await deleteDoc(doc(db, 'users', uid));
       toast.success('Utilisateur supprimé définitivement');
