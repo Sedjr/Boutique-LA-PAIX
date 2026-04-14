@@ -96,7 +96,17 @@ service cloud.firestore {
              data.dateRetraitPrevue is string &&
              data.isExpress is bool &&
              data.boutiqueSource in ['Senade', 'Gankpodo'] &&
-             (!('transactionId' in data) || data.transactionId is string);
+             (!('transactionId' in data) || data.transactionId is string) &&
+             (!('recuEnvoye' in data) || data.recuEnvoye is bool) &&
+             (!('envoyePar' in data) || data.envoyePar is string) &&
+             (!('dateEnvoiRecu' in data) || data.dateEnvoiRecu is timestamp) &&
+             (!('notifArriveeEnvoyee' in data) || data.notifArriveeEnvoyee is bool) &&
+             (!('notifPar' in data) || data.notifPar is string) &&
+             (!('dateNotifArrivee' in data) || data.dateNotifArrivee is timestamp) &&
+             (!('agent_saisie' in data) || data.agent_saisie is string) &&
+             (!('updatedAt' in data) || data.updatedAt is timestamp) &&
+             (!('createdAt' in data) || data.createdAt is timestamp) &&
+             (!('exporte' in data) || data.exporte is bool);
     }
 
     function isValidMovement(data) {

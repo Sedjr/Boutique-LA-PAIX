@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { db, handleFirestoreError, OperationType } from '../firebase';
-import { collection, query, onSnapshot, doc, updateDoc, getDoc, writeBatch, where, getDocs, orderBy } from 'firebase/firestore';
+import { collection, query, onSnapshot, doc, updateDoc, getDoc, writeBatch, where, getDocs, orderBy, deleteDoc } from 'firebase/firestore';
 import { UserProfile, Boutique, UserRole, AdminAlert } from '../types';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -10,7 +10,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Switch } from '@/components/ui/switch';
 import { Label } from '@/components/ui/label';
 import { toast } from 'sonner';
-import { Users, Shield, Store, CheckCircle2, XCircle, UserCheck, UserMinus, Clock, Lock, Unlock, AlertCircle } from 'lucide-react';
+import { Users, Shield, Store, CheckCircle2, XCircle, UserCheck, UserMinus, Clock, Lock, Unlock, AlertCircle, Trash2 } from 'lucide-react';
 
 export const UserManagement: React.FC = () => {
   const [users, setUsers] = useState<UserProfile[]>([]);
@@ -93,6 +93,17 @@ export const UserManagement: React.FC = () => {
       toast.success('Utilisateur mis à jour');
     } catch (err) {
       handleFirestoreError(err, OperationType.UPDATE, `users/${uid}`);
+    }
+  };
+
+  const handleDeleteUser = async (uid: string, email: string) => {
+    if (!window.confirm(`Voulez-vous supprimer définitivement le compte de ${email} ?`)) return;
+    
+    try {
+      await deleteDoc(doc(db, 'users', uid));
+      toast.success('Utilisateur supprimé définitivement');
+    } catch (err) {
+      handleFirestoreError(err, OperationType.DELETE, `users/${uid}`);
     }
   };
 
@@ -207,6 +218,7 @@ export const UserManagement: React.FC = () => {
                 <TableHead>Contrat</TableHead>
                 <TableHead>Approbation</TableHead>
                 <TableHead>Statut</TableHead>
+                <TableHead className="text-right">Actions</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -291,6 +303,16 @@ export const UserManagement: React.FC = () => {
                         {u.isActive ? 'Actif' : 'Suspendu'}
                       </span>
                     </div>
+                  </TableCell>
+                  <TableCell className="text-right">
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="text-destructive hover:bg-destructive/10 h-8 w-8"
+                      onClick={() => handleDeleteUser(u.uid, u.email)}
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </Button>
                   </TableCell>
                 </TableRow>
               ))}

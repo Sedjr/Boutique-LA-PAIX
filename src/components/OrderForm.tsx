@@ -191,9 +191,9 @@ export const OrderForm: React.FC<OrderFormProps> = ({ initialOrder, onClose, use
           variant="ghost" 
           size="icon" 
           onClick={onClose}
-          className="h-10 w-10 rounded-full hover:bg-destructive/10 hover:text-destructive active:bg-destructive/20 transition-colors"
+          className="absolute top-[15px] right-[15px] h-10 w-10 rounded-full bg-black/20 p-2 text-black hover:bg-black/30 transition-colors z-50"
         >
-          <X className="h-6 w-6" />
+          <X className="h-6 w-6 stroke-[3px]" />
         </Button>
       </CardHeader>
       <CardContent className="pt-6">

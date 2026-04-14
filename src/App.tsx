@@ -19,6 +19,53 @@ const UserManagement = lazy(() => import('./components/UserManagement').then(m =
 const MyCash = lazy(() => import('./components/MyCash').then(m => ({ default: m.MyCash })));
 const Settings = lazy(() => import('./components/Settings').then(m => ({ default: m.Settings })));
 
+const SuspensionOverlay = ({ onLogout }: { onLogout: () => void }) => {
+  const [countdown, setCountdown] = useState(20);
+
+  useEffect(() => {
+    const timer = setInterval(() => {
+      setCountdown((prev) => {
+        if (prev <= 1) {
+          clearInterval(timer);
+          onLogout();
+          return 0;
+        }
+        return prev - 1;
+      });
+    }, 1000);
+
+    return () => clearInterval(timer);
+  }, [onLogout]);
+
+  return (
+    <div className="h-screen w-screen fixed inset-0 z-[100] flex flex-col items-center justify-center bg-background p-6 text-center animate-in fade-in duration-500">
+      <div className="bg-destructive/10 p-6 rounded-full mb-6 animate-pulse">
+        <Lock className="h-16 w-16 text-destructive" />
+      </div>
+      <h1 className="text-3xl font-black mb-4 text-destructive">COMPTE SUSPENDU</h1>
+      <Card className="max-w-md border-2 border-destructive/20 shadow-xl">
+        <CardContent className="pt-6 space-y-4">
+          <p className="text-muted-foreground text-lg font-bold">
+            Votre compte a été suspendu. Veuillez contacter votre administrateur pour plus d'informations.
+          </p>
+          <div className="bg-primary/5 p-4 rounded-lg border border-primary/10">
+            <p className="text-sm font-black text-primary uppercase tracking-wider mb-1">Contact Support</p>
+            <p className="text-xl font-black">+229 01 62 06 03 07</p>
+          </div>
+          <div className="pt-4 border-t">
+            <p className="text-sm text-muted-foreground mb-2">Déconnexion automatique dans :</p>
+            <div className="text-4xl font-black text-destructive">{countdown}s</div>
+          </div>
+          <Button onClick={onLogout} variant="outline" className="w-full h-12 font-bold gap-2 mt-4">
+            <LogOut className="h-5 w-5" />
+            Se déconnecter maintenant
+          </Button>
+        </CardContent>
+      </Card>
+    </div>
+  );
+};
+
 export default function App() {
   const [user, setUser] = useState<UserProfile | null>(null);
   const [loading, setLoading] = useState(true);
@@ -28,6 +75,7 @@ export default function App() {
   const [activeTab, setActiveTab] = useState('orders');
   const [timeLockEnabled, setTimeLockEnabled] = useState(true);
   const [unreadAlertsCount, setUnreadAlertsCount] = useState(0);
+  const [isLoggingIn, setIsLoggingIn] = useState(false);
 
   const isWithinServiceHours = () => {
     if (!timeLockEnabled) return true; // Admin override
@@ -137,11 +185,17 @@ export default function App() {
   }, []);
 
   const handleLogin = async () => {
+    if (isLoggingIn) return;
+    setIsLoggingIn(true);
     const provider = new GoogleAuthProvider();
     try {
       await signInWithPopup(auth, provider);
-    } catch (err) {
-      console.error("Login Error:", err);
+    } catch (err: any) {
+      if (err.code !== 'auth/popup-closed-by-user') {
+        console.error("Login Error:", err);
+      }
+    } finally {
+      setIsLoggingIn(false);
     }
   };
 
@@ -206,9 +260,18 @@ export default function App() {
             <p className="text-muted-foreground">Espace de gestion multi-boutiques</p>
           </CardHeader>
           <CardContent className="pt-6">
-            <Button onClick={handleLogin} className="w-full h-14 text-lg font-bold gap-3" size="lg">
-              <LogIn className="h-6 w-6" />
-              SE CONNECTER AVEC GOOGLE
+            <Button 
+              onClick={handleLogin} 
+              disabled={isLoggingIn}
+              className="w-full h-14 text-lg font-bold gap-3" 
+              size="lg"
+            >
+              {isLoggingIn ? (
+                <Loader2 className="h-6 w-6 animate-spin" />
+              ) : (
+                <LogIn className="h-6 w-6" />
+              )}
+              {isLoggingIn ? 'CONNEXION...' : 'SE CONNECTER AVEC GOOGLE'}
             </Button>
           </CardContent>
         </Card>
@@ -217,21 +280,7 @@ export default function App() {
   }
 
   if (user && !user.isActive && user.role !== 'admin') {
-    return (
-      <div className="h-screen w-screen flex flex-col items-center justify-center bg-background p-6 text-center">
-        <div className="bg-destructive/10 p-6 rounded-full mb-6">
-          <Lock className="h-16 w-16 text-destructive" />
-        </div>
-        <h1 className="text-3xl font-black mb-4 text-destructive">COMPTE SUSPENDU</h1>
-        <p className="text-muted-foreground text-lg max-w-md mx-auto mb-8">
-          Votre accès a été suspendu par l'administrateur. Veuillez contacter <span className="font-black text-primary">Euloge Houssou</span>.
-        </p>
-        <Button onClick={handleLogout} variant="outline" className="h-12 px-8 font-bold gap-2">
-          <LogOut className="h-5 w-5" />
-          Se déconnecter
-        </Button>
-      </div>
-    );
+    return <SuspensionOverlay onLogout={handleLogout} />;
   }
 
   if (user && !user.hasAcceptedContract && user.role !== 'admin') {

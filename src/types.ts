@@ -28,6 +28,9 @@ export interface Order {
   recuEnvoye?: boolean;
   envoyePar?: string;
   dateEnvoiRecu?: any;
+  notifArriveeEnvoyee?: boolean;
+  notifPar?: string;
+  dateNotifArrivee?: any;
 }
 
 export interface CashMovement {
