@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { db, handleFirestoreError, OperationType } from '../firebase';
-import { collection, query, orderBy, onSnapshot, deleteDoc, doc, where, updateDoc, serverTimestamp } from 'firebase/firestore';
+import { collection, query, orderBy, onSnapshot, doc, where, updateDoc, serverTimestamp, deleteDoc } from 'firebase/firestore';
 import { Order, TypeService, Boutique } from '../types';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Button } from '@/components/ui/button';
@@ -76,7 +76,7 @@ export const OrderList: React.FC<OrderListProps> = ({ onEdit, isAdmin, userBouti
   };
 
   const handleDelete = async (id: string) => {
-    if (!window.confirm('Voulez-vous vraiment supprimer cette commande ?')) return;
+    if (!window.confirm('Confirmer la suppression définitive de cette facture ?')) return;
     try {
       await deleteDoc(doc(db, 'orders', id));
       toast.success('Commande supprimée');
