@@ -19,6 +19,9 @@ export const Settings: React.FC = () => {
         setTimeLockEnabled(docSnap.data().timeLockEnabled ?? true);
       }
       setLoading(false);
+    }, (err) => {
+      console.error("Settings listener error:", err);
+      setLoading(false);
     });
     return () => unsubscribe();
   }, []);

@@ -22,6 +22,7 @@ const Settings = lazy(() => import('./components/Settings').then(m => ({ default
 export default function App() {
   const [user, setUser] = useState<UserProfile | null>(null);
   const [loading, setLoading] = useState(true);
+  const [timeoutReached, setTimeoutReached] = useState(false);
   const [showForm, setShowForm] = useState(false);
   const [editingOrder, setEditingOrder] = useState<Order | undefined>();
   const [activeTab, setActiveTab] = useState('orders');
@@ -46,21 +47,41 @@ export default function App() {
   };
 
   useEffect(() => {
+    let unsubscribeSettings: (() => void) | undefined;
+    let unsubscribeAuth: (() => void) | undefined;
+    let unsubscribeUser: (() => void) | undefined;
+    let unsubscribeAlerts: (() => void) | undefined;
+
+    // Startup Timeout Protocol
+    const timer = setTimeout(() => {
+      if (loading) {
+        console.warn("Startup timeout reached. Clearing cache...");
+        localStorage.clear();
+        sessionStorage.clear();
+        setTimeoutReached(true);
+      }
+    }, 10000);
+
     // Fetch global settings
-    const unsubscribeSettings = onSnapshot(doc(db, 'settings', 'global'), (docSnap) => {
+    unsubscribeSettings = onSnapshot(doc(db, 'settings', 'global'), (docSnap) => {
       if (docSnap.exists()) {
         setTimeLockEnabled(docSnap.data().timeLockEnabled ?? true);
       }
+    }, (err) => {
+      console.error("Settings listener error:", err);
     });
 
-    const unsubscribeAuth = onAuthStateChanged(auth, async (firebaseUser) => {
+    unsubscribeAuth = onAuthStateChanged(auth, async (firebaseUser) => {
+      // Cleanup previous sub-listeners
+      if (unsubscribeUser) unsubscribeUser();
+      if (unsubscribeAlerts) unsubscribeAlerts();
+
       if (firebaseUser) {
         const userRef = doc(db, 'users', firebaseUser.uid);
-        const unsubscribeUser = onSnapshot(userRef, async (docSnap) => {
+        unsubscribeUser = onSnapshot(userRef, async (docSnap) => {
           if (docSnap.exists()) {
             setUser(docSnap.data() as UserProfile);
           } else {
-            // New user creation
             const isAdmin = firebaseUser.email === 'eulogehoussou9@gmail.com';
             const newUser: UserProfile = {
               uid: firebaseUser.uid,
@@ -69,10 +90,9 @@ export default function App() {
               boutiqueAssignee: isAdmin ? 'Toutes' : 'Senade',
               displayName: firebaseUser.displayName || firebaseUser.email || '',
               isActive: true,
-              isApproved: isAdmin, // Only admin is auto-approved
+              isApproved: isAdmin,
               hasAcceptedContract: false
             };
-            
             await setDoc(userRef, newUser);
             
             // Create admin alert for new user
@@ -88,21 +108,19 @@ export default function App() {
             setUser(newUser);
           }
           setLoading(false);
+        }, (err) => {
+          console.error("User profile listener error:", err);
+          setLoading(false);
         });
         
-        // Listen for alerts if admin
         if (firebaseUser.email === 'eulogehoussou9@gmail.com') {
           const alertsQuery = query(collection(db, 'alertes_admin'), where('lu', '==', false));
-          const unsubscribeAlerts = onSnapshot(alertsQuery, (snapshot) => {
+          unsubscribeAlerts = onSnapshot(alertsQuery, (snapshot) => {
             setUnreadAlertsCount(snapshot.size);
+          }, (err) => {
+            console.error("Admin alerts listener error:", err);
           });
-          return () => {
-            unsubscribeUser();
-            unsubscribeAlerts();
-          };
         }
-
-        return () => unsubscribeUser();
       } else {
         setUser(null);
         setLoading(false);
@@ -110,8 +128,11 @@ export default function App() {
     });
 
     return () => {
-      unsubscribeSettings();
-      unsubscribeAuth();
+      clearTimeout(timer);
+      if (unsubscribeSettings) unsubscribeSettings();
+      if (unsubscribeAuth) unsubscribeAuth();
+      if (unsubscribeUser) unsubscribeUser();
+      if (unsubscribeAlerts) unsubscribeAlerts();
     };
   }, []);
 
@@ -126,10 +147,39 @@ export default function App() {
 
   const handleLogout = () => signOut(auth);
 
+  const handleReset = async () => {
+    try {
+      await signOut(auth);
+      localStorage.clear();
+      sessionStorage.clear();
+      window.location.reload();
+    } catch (err) {
+      window.location.reload();
+    }
+  };
+
   if (loading) {
     return (
-      <div className="h-screen w-screen flex items-center justify-center bg-background">
-        <WashingMachine className="h-12 w-12 animate-bounce text-primary" />
+      <div className="h-screen w-screen flex flex-col items-center justify-center bg-background gap-6">
+        <div className="relative">
+          <WashingMachine className="h-16 w-16 animate-bounce text-primary" />
+          <Loader2 className="h-20 w-20 animate-spin text-primary/20 absolute -top-2 -left-2" />
+        </div>
+        
+        {timeoutReached && (
+          <div className="flex flex-col items-center gap-4 animate-in fade-in slide-in-from-bottom-4 duration-700">
+            <p className="text-muted-foreground font-bold px-6 text-center max-w-xs">
+              La connexion semble lente ou bloquée...
+            </p>
+            <Button 
+              variant="destructive" 
+              onClick={handleReset}
+              className="font-black h-12 px-8 shadow-lg shadow-destructive/20"
+            >
+              RÉINITIALISER L'APPLICATION
+            </Button>
+          </div>
+        )}
       </div>
     );
   }
