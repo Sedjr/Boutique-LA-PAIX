@@ -19,58 +19,9 @@ const UserManagement = lazy(() => import('./components/UserManagement').then(m =
 const MyCash = lazy(() => import('./components/MyCash').then(m => ({ default: m.MyCash })));
 const Settings = lazy(() => import('./components/Settings').then(m => ({ default: m.Settings })));
 
-const SuspensionOverlay = ({ onLogout }: { onLogout: () => void }) => {
-  const [countdown, setCountdown] = useState(20);
-
-  useEffect(() => {
-    const timer = setInterval(() => {
-      setCountdown((prev) => {
-        if (prev <= 1) {
-          clearInterval(timer);
-          onLogout();
-          return 0;
-        }
-        return prev - 1;
-      });
-    }, 1000);
-
-    return () => clearInterval(timer);
-  }, [onLogout]);
-
-  return (
-    <div className="h-screen w-screen fixed inset-0 z-[100] flex flex-col items-center justify-center bg-background p-6 text-center animate-in fade-in duration-500">
-      <div className="bg-destructive/10 p-6 rounded-full mb-6 animate-pulse">
-        <Lock className="h-16 w-16 text-destructive" />
-      </div>
-      <h1 className="text-3xl font-black mb-4 text-destructive">⚠️ COMPTE SUSPENDU</h1>
-      <Card className="max-w-md border-2 border-destructive/20 shadow-xl">
-        <CardContent className="pt-6 space-y-4">
-          <p className="text-muted-foreground text-lg font-bold">
-            Votre compte a été suspendu. Veuillez contacter votre administrateur.
-          </p>
-          <div className="bg-primary/5 p-4 rounded-lg border border-primary/10">
-            <p className="text-sm font-black text-primary uppercase tracking-wider mb-1">Contact Support</p>
-            <p className="text-xl font-black">+229 01 62 06 03 07</p>
-          </div>
-          <div className="pt-4 border-t">
-            <p className="text-sm text-muted-foreground mb-2 font-bold">
-              Déconnexion automatique dans {countdown} secondes...
-            </p>
-          </div>
-          <Button onClick={onLogout} variant="outline" className="w-full h-12 font-bold gap-2 mt-4">
-            <LogOut className="h-5 w-5" />
-            Se déconnecter maintenant
-          </Button>
-        </CardContent>
-      </Card>
-    </div>
-  );
-};
-
 export default function App() {
   const [user, setUser] = useState<UserProfile | null>(null);
   const [loading, setLoading] = useState(true);
-  const [isSuspended, setIsSuspended] = useState(false);
   const [timeoutReached, setTimeoutReached] = useState(false);
   const [showForm, setShowForm] = useState(false);
   const [editingOrder, setEditingOrder] = useState<Order | undefined>();
@@ -112,6 +63,18 @@ export default function App() {
       }
     }, 10000);
 
+    // 48-Hour Security Check (Auto-Logoff)
+    const lastActivity = localStorage.getItem('lastActivity');
+    if (lastActivity) {
+      const lastActivityTime = parseInt(lastActivity);
+      const fortyEightHours = 48 * 60 * 60 * 1000;
+      if (Date.now() - lastActivityTime > fortyEightHours) {
+        console.warn("Session expired (48h+). Forcing logout...");
+        signOut(auth);
+        localStorage.removeItem('lastActivity');
+      }
+    }
+
     // Fetch global settings
     unsubscribeSettings = onSnapshot(doc(db, 'settings', 'global'), (docSnap) => {
       if (docSnap.exists()) {
@@ -127,18 +90,21 @@ export default function App() {
       if (unsubscribeAlerts) unsubscribeAlerts();
 
       if (firebaseUser) {
+        // Update last activity for 48h check
+        localStorage.setItem('lastActivity', Date.now().toString());
+
         const userRef = doc(db, 'users', firebaseUser.uid);
         unsubscribeUser = onSnapshot(userRef, async (docSnap) => {
           if (docSnap.exists()) {
             const userData = docSnap.data() as UserProfile;
-            setUser(userData);
             
-            // Suspension Detection
+            // Direct Suspension Check
             if (!userData.isActive && userData.role !== 'admin') {
-              setIsSuspended(true);
-            } else {
-              setIsSuspended(false);
+              handleLogout();
+              return;
             }
+            
+            setUser(userData);
           } else {
             const isAdmin = firebaseUser.email === 'eulogehoussou9@gmail.com';
             const newUser: UserProfile = {
@@ -248,11 +214,6 @@ export default function App() {
     );
   }
 
-  // Suspension Overlay (FORCED)
-  if (isSuspended) {
-    return <SuspensionOverlay onLogout={handleLogout} />;
-  }
-
   // Time-based access control (Admins bypass this)
   if (!isWithinServiceHours() && user?.role !== 'admin') {
     return (
@@ -295,7 +256,8 @@ export default function App() {
   }
 
   if (user && !user.isActive && user.role !== 'admin') {
-    return <SuspensionOverlay onLogout={handleLogout} />;
+    handleLogout();
+    return null;
   }
 
   if (user && !user.hasAcceptedContract && user.role !== 'admin') {
