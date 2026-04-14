@@ -1,11 +1,11 @@
 import React, { useState, useEffect } from 'react';
 import { db, handleFirestoreError, OperationType } from '../firebase';
-import { collection, query, orderBy, onSnapshot, deleteDoc, doc, where } from 'firebase/firestore';
+import { collection, query, orderBy, onSnapshot, deleteDoc, doc, where, updateDoc, serverTimestamp } from 'firebase/firestore';
 import { Order, TypeService, Boutique } from '../types';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { WashingMachine, Shirt, CheckCircle2, MessageSquare, Trash2, Edit, Play, Store, Zap, Droplets, ChevronRight, Phone, Calendar, CreditCard, Info, Camera } from 'lucide-react';
+import { WashingMachine, Shirt, CheckCircle2, MessageSquare, Trash2, Edit, Play, Store, Zap, Droplets, ChevronRight, Phone, Calendar, CreditCard, Info, Mail } from 'lucide-react';
 import { sendWhatsAppReceipt, sendArrivalNotification } from '../lib/whatsapp';
 import { toast } from 'sonner';
 import { motion, AnimatePresence } from 'motion/react';
@@ -15,9 +15,10 @@ interface OrderListProps {
   onEdit: (order: Order) => void;
   isAdmin: boolean;
   userBoutique: Boutique;
+  agentName: string;
 }
 
-export const OrderList: React.FC<OrderListProps> = ({ onEdit, isAdmin, userBoutique }) => {
+export const OrderList: React.FC<OrderListProps> = ({ onEdit, isAdmin, userBoutique, agentName }) => {
   const [orders, setOrders] = useState<Order[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedOrder, setSelectedOrder] = useState<Order | null>(null);
@@ -47,6 +48,32 @@ export const OrderList: React.FC<OrderListProps> = ({ onEdit, isAdmin, userBouti
 
     return () => unsubscribe();
   }, [userBoutique]);
+
+  const handleSendReceipt = async (order: Order) => {
+    sendWhatsAppReceipt(order);
+    try {
+      await updateDoc(doc(db, 'orders', order.id!), {
+        recuEnvoye: true,
+        envoyePar: agentName,
+        dateEnvoiRecu: serverTimestamp()
+      });
+    } catch (err) {
+      console.error("Error updating receipt status:", err);
+    }
+  };
+
+  const handleSendArrival = async (order: Order) => {
+    sendArrivalNotification(order);
+    try {
+      await updateDoc(doc(db, 'orders', order.id!), {
+        notifArriveeEnvoyee: true, // Optional field for tracking
+        notifPar: agentName,
+        dateNotifArrivee: serverTimestamp()
+      });
+    } catch (err) {
+      console.error("Error updating arrival status:", err);
+    }
+  };
 
   const handleDelete = async (id: string) => {
     if (!window.confirm('Voulez-vous vraiment supprimer cette commande ?')) return;
@@ -88,6 +115,7 @@ export const OrderList: React.FC<OrderListProps> = ({ onEdit, isAdmin, userBouti
               <TableHead>Client</TableHead>
               <TableHead>Service</TableHead>
               <TableHead>Dates</TableHead>
+              {isAdmin && <TableHead>Agent</TableHead>}
               <TableHead className="text-right">Total</TableHead>
               <TableHead className="text-right">Reste</TableHead>
               <TableHead className="text-center">Actions</TableHead>
@@ -121,8 +149,8 @@ export const OrderList: React.FC<OrderListProps> = ({ onEdit, isAdmin, userBouti
                     <div className="flex items-center gap-3">
                       {getServiceIcon(order.typeService)}
                       {getServiceBadge(order.typeService)}
-                      {order.photoPreuveUrl && (
-                        <Camera className="h-4 w-4 text-muted-foreground" title="Photo disponible" />
+                      {order.recuEnvoye && (
+                        <Mail className="h-4 w-4 text-green-500" title={`Reçu envoyé par ${order.envoyePar}`} />
                       )}
                     </div>
                   </TableCell>
@@ -132,6 +160,11 @@ export const OrderList: React.FC<OrderListProps> = ({ onEdit, isAdmin, userBouti
                       <div className="font-bold text-primary">Retrait: {order.dateRetraitPrevue}</div>
                     </div>
                   </TableCell>
+                  {isAdmin && (
+                    <TableCell className="text-[10px] font-bold text-muted-foreground uppercase">
+                      {order.agent_saisie || 'Inconnu'}
+                    </TableCell>
+                  )}
                   <TableCell className="text-right font-semibold">{order.montantTotal} F</TableCell>
                   <TableCell className="text-right">
                     <span className={`font-bold ${order.resteAPayer > 0 ? 'text-destructive' : 'text-green-600'}`}>
@@ -150,37 +183,25 @@ export const OrderList: React.FC<OrderListProps> = ({ onEdit, isAdmin, userBouti
                         <Edit className="h-4 w-4" />
                       </Button>
                       
-                      <Button 
-                        variant="outline" 
-                        size="icon" 
-                        title="Envoyer Reçu"
-                        className="rounded-full bg-green-50 text-green-600 hover:bg-green-600 hover:text-white border-green-200"
-                        onClick={() => sendWhatsAppReceipt(order)}
-                      >
-                        <MessageSquare className="h-4 w-4" />
-                      </Button>
-
-                      <Button 
-                        variant="outline" 
-                        size="icon" 
-                        title="Confirmer Arrivée"
-                        className="rounded-full bg-blue-50 text-blue-600 hover:bg-blue-600 hover:text-white border-blue-200"
-                        onClick={() => sendArrivalNotification(order)}
-                      >
-                        <Store className="h-4 w-4" />
-                      </Button>
-
-                      {order.noteVocaleUrl && (
                         <Button 
                           variant="outline" 
                           size="icon" 
-                          title="Note Vocale"
-                          className="rounded-full bg-purple-50 text-purple-600 hover:bg-purple-600 hover:text-white border-purple-200"
-                          onClick={() => window.open(order.noteVocaleUrl, '_blank')}
+                          title="Envoyer Reçu"
+                          className="rounded-full bg-green-50 text-green-600 hover:bg-green-600 hover:text-white border-green-200"
+                          onClick={() => handleSendReceipt(order)}
                         >
-                          <Play className="h-4 w-4" />
+                          <MessageSquare className="h-4 w-4" />
                         </Button>
-                      )}
+                        
+                        <Button 
+                          variant="outline" 
+                          size="icon" 
+                          title="Confirmer Arrivée"
+                          className="rounded-full bg-blue-50 text-blue-600 hover:bg-blue-600 hover:text-white border-blue-200"
+                          onClick={() => handleSendArrival(order)}
+                        >
+                          <Store className="h-4 w-4" />
+                        </Button>
 
                       {isAdmin && (
                         <Button 
@@ -237,7 +258,7 @@ export const OrderList: React.FC<OrderListProps> = ({ onEdit, isAdmin, userBouti
                 <div className="flex items-center gap-2 text-xs font-medium">
                   {getServiceIcon(order.typeService)}
                   <span>{order.typeService}</span>
-                  {order.photoPreuveUrl && <Camera className="h-3 w-3" />}
+                  {order.recuEnvoye && <Mail className="h-3 w-3 text-green-500" />}
                 </div>
                 <ChevronRight className="h-5 w-5 text-slate-300" />
               </div>
@@ -349,47 +370,20 @@ export const OrderList: React.FC<OrderListProps> = ({ onEdit, isAdmin, userBouti
                 </div>
               </div>
 
-              {/* Photo Preuve */}
-              {selectedOrder.photoPreuveUrl && (
-                <div className="space-y-2">
-                  <p className="text-[10px] font-black uppercase text-muted-foreground flex items-center gap-1">
-                    <Camera className="h-3 w-3" /> Photo de Preuve
-                  </p>
-                  <div className="rounded-xl overflow-hidden border-2 shadow-sm">
-                    <img 
-                      src={selectedOrder.photoPreuveUrl} 
-                      alt="Preuve" 
-                      className="w-full h-auto object-cover max-h-64"
-                      loading="lazy"
-                      referrerPolicy="no-referrer"
-                    />
-                  </div>
-                </div>
-              )}
-
               {/* Quick Actions */}
               <div className="grid grid-cols-2 gap-2">
                 <Button 
                   className="bg-green-600 hover:bg-green-700 font-bold gap-2"
-                  onClick={() => sendWhatsAppReceipt(selectedOrder)}
+                  onClick={() => handleSendReceipt(selectedOrder)}
                 >
                   <MessageSquare className="h-4 w-4" /> Reçu WhatsApp
                 </Button>
                 <Button 
                   className="bg-blue-600 hover:bg-blue-700 font-bold gap-2"
-                  onClick={() => sendArrivalNotification(selectedOrder)}
+                  onClick={() => handleSendArrival(selectedOrder)}
                 >
                   <Store className="h-4 w-4" /> Prêt en Boutique
                 </Button>
-                {selectedOrder.noteVocaleUrl && (
-                  <Button 
-                    variant="outline" 
-                    className="col-span-2 border-purple-200 text-purple-700 hover:bg-purple-50 font-bold gap-2"
-                    onClick={() => window.open(selectedOrder.noteVocaleUrl, '_blank')}
-                  >
-                    <Play className="h-4 w-4" /> Écouter la Note Vocale
-                  </Button>
-                )}
               </div>
             </div>
           )}

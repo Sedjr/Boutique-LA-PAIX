@@ -1,19 +1,23 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, lazy, Suspense } from 'react';
 import { auth, db } from './firebase';
 import { onAuthStateChanged, signInWithPopup, GoogleAuthProvider, signOut } from 'firebase/auth';
-import { doc, onSnapshot } from 'firebase/firestore';
-import { UserProfile, Order } from './types';
+import { doc, onSnapshot, setDoc, collection, query, where, serverTimestamp } from 'firebase/firestore';
+import { UserProfile, Order, AdminAlert } from './types';
 import { OrderList } from './components/OrderList';
+import { Contract } from './components/Contract';
 import { OrderForm } from './components/OrderForm';
-import { FinancialBilan } from './components/FinancialBilan';
-import { CashManagement } from './components/CashManagement';
-import { UserManagement } from './components/UserManagement';
-import { MyCash } from './components/MyCash';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Toaster } from '@/components/ui/sonner';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { LogIn, LogOut, Plus, WashingMachine, LayoutDashboard, ListTodo, Wallet, BarChart3, Users as UsersIcon, Store } from 'lucide-react';
+import { LogIn, LogOut, Plus, WashingMachine, LayoutDashboard, ListTodo, Wallet, BarChart3, Users as UsersIcon, Store, Settings as SettingsIcon, Loader2 } from 'lucide-react';
+
+// Lazy load tab components
+const FinancialBilan = lazy(() => import('./components/FinancialBilan').then(m => ({ default: m.FinancialBilan })));
+const CashManagement = lazy(() => import('./components/CashManagement').then(m => ({ default: m.CashManagement })));
+const UserManagement = lazy(() => import('./components/UserManagement').then(m => ({ default: m.UserManagement })));
+const MyCash = lazy(() => import('./components/MyCash').then(m => ({ default: m.MyCash })));
+const Settings = lazy(() => import('./components/Settings').then(m => ({ default: m.Settings })));
 
 export default function App() {
   const [user, setUser] = useState<UserProfile | null>(null);
@@ -21,29 +25,83 @@ export default function App() {
   const [showForm, setShowForm] = useState(false);
   const [editingOrder, setEditingOrder] = useState<Order | undefined>();
   const [activeTab, setActiveTab] = useState('orders');
+  const [timeLockEnabled, setTimeLockEnabled] = useState(true);
+  const [unreadAlertsCount, setUnreadAlertsCount] = useState(0);
+
+  const isWithinServiceHours = () => {
+    if (!timeLockEnabled) return true; // Admin override
+
+    const now = new Date();
+    const day = now.getDay(); // 0 is Sunday
+    const hours = now.getHours();
+    const minutes = now.getMinutes();
+    const time = hours * 60 + minutes;
+    
+    if (day === 0) return false; // Closed on Sunday
+    
+    const start = 6 * 60; // 06:00
+    const end = 22 * 60 + 30; // 22:30
+    
+    return time >= start && time <= end;
+  };
 
   useEffect(() => {
-    const unsubscribeAuth = onAuthStateChanged(auth, (firebaseUser) => {
+    // Fetch global settings
+    const unsubscribeSettings = onSnapshot(doc(db, 'settings', 'global'), (docSnap) => {
+      if (docSnap.exists()) {
+        setTimeLockEnabled(docSnap.data().timeLockEnabled ?? true);
+      }
+    });
+
+    const unsubscribeAuth = onAuthStateChanged(auth, async (firebaseUser) => {
       if (firebaseUser) {
-        // Simple profile listener without session/time restrictions
-        const unsubscribeUser = onSnapshot(doc(db, 'users', firebaseUser.uid), (docSnap) => {
+        const userRef = doc(db, 'users', firebaseUser.uid);
+        const unsubscribeUser = onSnapshot(userRef, async (docSnap) => {
           if (docSnap.exists()) {
             setUser(docSnap.data() as UserProfile);
           } else {
-            // Fallback for new users if profile doesn't exist yet
-            setUser({
+            // New user creation
+            const isAdmin = firebaseUser.email === 'eulogehoussou9@gmail.com';
+            const newUser: UserProfile = {
               uid: firebaseUser.uid,
               email: firebaseUser.email || '',
-              role: firebaseUser.email === 'eulogehoussou9@gmail.com' ? 'admin' : 'secretaire',
-              boutiqueAssignee: firebaseUser.email === 'eulogehoussou9@gmail.com' ? 'Toutes' : 'Senade',
-              displayName: firebaseUser.displayName || '',
+              role: isAdmin ? 'admin' : 'secretaire',
+              boutiqueAssignee: isAdmin ? 'Toutes' : 'Senade',
+              displayName: firebaseUser.displayName || firebaseUser.email || '',
               isActive: true,
-              isApproved: true,
-              hasAcceptedContract: true
-            });
+              isApproved: isAdmin, // Only admin is auto-approved
+              hasAcceptedContract: false
+            };
+            
+            await setDoc(userRef, newUser);
+            
+            // Create admin alert for new user
+            if (!isAdmin) {
+              await setDoc(doc(collection(db, 'alertes_admin')), {
+                email: firebaseUser.email,
+                heure: serverTimestamp(),
+                appareil: navigator.userAgent,
+                lu: false
+              });
+            }
+            
+            setUser(newUser);
           }
           setLoading(false);
         });
+        
+        // Listen for alerts if admin
+        if (firebaseUser.email === 'eulogehoussou9@gmail.com') {
+          const alertsQuery = query(collection(db, 'alertes_admin'), where('lu', '==', false));
+          const unsubscribeAlerts = onSnapshot(alertsQuery, (snapshot) => {
+            setUnreadAlertsCount(snapshot.size);
+          });
+          return () => {
+            unsubscribeUser();
+            unsubscribeAlerts();
+          };
+        }
+
         return () => unsubscribeUser();
       } else {
         setUser(null);
@@ -51,7 +109,10 @@ export default function App() {
       }
     });
 
-    return () => unsubscribeAuth();
+    return () => {
+      unsubscribeSettings();
+      unsubscribeAuth();
+    };
   }, []);
 
   const handleLogin = async () => {
@@ -69,6 +130,18 @@ export default function App() {
     return (
       <div className="h-screen w-screen flex items-center justify-center bg-background">
         <WashingMachine className="h-12 w-12 animate-bounce text-primary" />
+      </div>
+    );
+  }
+
+  // Time-based access control (Admins bypass this)
+  if (!isWithinServiceHours() && user?.role !== 'admin') {
+    return (
+      <div className="h-screen w-screen flex flex-col items-center justify-center bg-background p-4 text-center">
+        <Store className="h-16 w-16 text-muted-foreground mb-4" />
+        <h1 className="text-2xl font-black mb-2">LA BOUTIQUE EST FERMÉE</h1>
+        <p className="text-muted-foreground font-bold">Revenez demain à 06h00.</p>
+        {user && <Button onClick={handleLogout} variant="ghost" className="mt-8">Se déconnecter</Button>}
       </div>
     );
   }
@@ -93,6 +166,54 @@ export default function App() {
     );
   }
 
+  if (user && !user.isActive && user.role !== 'admin') {
+    return (
+      <div className="h-screen w-screen flex flex-col items-center justify-center bg-background p-6 text-center">
+        <div className="bg-destructive/10 p-6 rounded-full mb-6">
+          <Lock className="h-16 w-16 text-destructive" />
+        </div>
+        <h1 className="text-3xl font-black mb-4 text-destructive">COMPTE SUSPENDU</h1>
+        <p className="text-muted-foreground text-lg max-w-md mx-auto mb-8">
+          Votre accès a été suspendu par l'administrateur. Veuillez contacter <span className="font-black text-primary">Euloge Houssou</span>.
+        </p>
+        <Button onClick={handleLogout} variant="outline" className="h-12 px-8 font-bold gap-2">
+          <LogOut className="h-5 w-5" />
+          Se déconnecter
+        </Button>
+      </div>
+    );
+  }
+
+  if (user && !user.hasAcceptedContract && user.role !== 'admin') {
+    return (
+      <Contract 
+        userUid={user.uid} 
+        onAccept={() => {}} // State will update via onSnapshot
+        onLogout={handleLogout} 
+      />
+    );
+  }
+
+  if (user && !user.isApproved && user.role !== 'admin') {
+    return (
+      <div className="h-screen w-screen flex flex-col items-center justify-center bg-background p-6 text-center">
+        <div className="bg-orange-100 p-6 rounded-full mb-6">
+          <Lock className="h-16 w-16 text-orange-600" />
+        </div>
+        <h1 className="text-3xl font-black mb-4">ACCÈS EN ATTENTE</h1>
+        <p className="text-muted-foreground text-lg max-w-md mx-auto mb-8">
+          Votre contrat est signé. Votre compte est maintenant en attente de validation finale par <span className="font-black text-primary">Euloge Houssou</span>.
+        </p>
+        <Button onClick={handleLogout} variant="outline" className="h-12 px-8 font-bold gap-2">
+          <LogOut className="h-5 w-5" />
+          Se déconnecter
+        </Button>
+      </div>
+    );
+  }
+
+  const agentName = user.displayName || user.email;
+
   return (
     <div className="min-h-screen bg-muted/20 pb-20">
       <Toaster position="top-center" />
@@ -114,7 +235,7 @@ export default function App() {
 
           <div className="flex items-center gap-4">
             <div className="hidden md:flex flex-col items-end mr-2">
-              <span className="text-sm font-bold">{user.displayName}</span>
+              <span className="text-sm font-bold">{agentName}</span>
               <span className="text-[10px] uppercase font-black text-primary bg-primary/10 px-2 py-0.5 rounded">
                 {user.role}
               </span>
@@ -151,6 +272,7 @@ export default function App() {
             onClose={() => { setShowForm(false); setEditingOrder(undefined); }} 
             userBoutique={user.boutiqueAssignee}
             isAdmin={user.role === 'admin'}
+            agentName={agentName}
           />
         ) : (
           <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full space-y-6">
@@ -176,49 +298,89 @@ export default function App() {
                 </TabsTrigger>
               )}
               {user.role === 'admin' && (
-                <TabsTrigger value="users" className="hidden md:flex text-lg font-bold gap-2">
+                <TabsTrigger value="users" className="hidden md:flex text-lg font-bold gap-2 relative">
                   <UsersIcon className="h-5 w-5" />
                   Équipe
+                  {unreadAlertsCount > 0 && (
+                    <span className="absolute -top-1 -right-1 h-3 w-3 bg-destructive rounded-full border-2 border-white animate-pulse" />
+                  )}
+                </TabsTrigger>
+              )}
+              {user.role === 'admin' && (
+                <TabsTrigger value="settings" className="text-sm md:text-lg font-bold gap-2">
+                  <SettingsIcon className="h-5 w-5" />
+                  Paramètres
                 </TabsTrigger>
               )}
             </TabsList>
             
             <TabsContent value="orders" className="mt-0">
-              <OrderList 
-                isAdmin={user.role === 'admin'} 
-                userBoutique={user.boutiqueAssignee}
-                onEdit={(order) => { setEditingOrder(order); setShowForm(true); }} 
-              />
+              {activeTab === 'orders' && (
+                <OrderList 
+                  isAdmin={user.role === 'admin'} 
+                  userBoutique={user.boutiqueAssignee}
+                  agentName={agentName}
+                  onEdit={(order) => { setEditingOrder(order); setShowForm(true); }} 
+                />
+              )}
             </TabsContent>
 
             <TabsContent value="cash" className="mt-0">
-              <CashManagement 
-                userBoutique={user.boutiqueAssignee}
-                isAdmin={user.role === 'admin'}
-              />
+              {activeTab === 'cash' && (
+                <Suspense fallback={<div className="p-8 text-center"><Loader2 className="animate-spin mx-auto h-8 w-8 text-primary" /></div>}>
+                  <CashManagement 
+                    userBoutique={user.boutiqueAssignee}
+                    isAdmin={user.role === 'admin'}
+                    agentName={agentName}
+                    timeLockEnabled={timeLockEnabled}
+                  />
+                </Suspense>
+              )}
             </TabsContent>
 
             {user.role === 'secretaire' && (
               <TabsContent value="mycash" className="mt-0">
-                <MyCash 
-                  userBoutique={user.boutiqueAssignee}
-                  userUid={user.uid}
-                />
+                {activeTab === 'mycash' && (
+                  <Suspense fallback={<div className="p-8 text-center"><Loader2 className="animate-spin mx-auto h-8 w-8 text-primary" /></div>}>
+                    <MyCash 
+                      userBoutique={user.boutiqueAssignee}
+                      userUid={user.uid}
+                    />
+                  </Suspense>
+                )}
               </TabsContent>
             )}
             
             {user.role === 'admin' && (
               <TabsContent value="bilan" className="mt-0">
-                <FinancialBilan 
-                  userBoutique={user.boutiqueAssignee}
-                  isAdmin={user.role === 'admin'}
-                />
+                {activeTab === 'bilan' && (
+                  <Suspense fallback={<div className="p-8 text-center"><Loader2 className="animate-spin mx-auto h-8 w-8 text-primary" /></div>}>
+                    <FinancialBilan 
+                      userBoutique={user.boutiqueAssignee}
+                      isAdmin={user.role === 'admin'}
+                    />
+                  </Suspense>
+                )}
               </TabsContent>
             )}
 
             {user.role === 'admin' && (
               <TabsContent value="users" className="mt-0">
-                <UserManagement />
+                {activeTab === 'users' && (
+                  <Suspense fallback={<div className="p-8 text-center"><Loader2 className="animate-spin mx-auto h-8 w-8 text-primary" /></div>}>
+                    <UserManagement />
+                  </Suspense>
+                )}
+              </TabsContent>
+            )}
+
+            {user.role === 'admin' && (
+              <TabsContent value="settings" className="mt-0">
+                {activeTab === 'settings' && (
+                  <Suspense fallback={<div className="p-8 text-center"><Loader2 className="animate-spin mx-auto h-8 w-8 text-primary" /></div>}>
+                    <Settings />
+                  </Suspense>
+                )}
               </TabsContent>
             )}
           </Tabs>

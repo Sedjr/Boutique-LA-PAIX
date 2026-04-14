@@ -46,10 +46,24 @@ service cloud.firestore {
     }
 
     function isAdmin() {
-      let user = getUser();
       return isAuthenticated() && 
         (request.auth.token.email == "eulogehoussou9@gmail.com" || 
-         (user != null && user.role == 'admin'));
+         (exists(/databases/$(database)/documents/users/$(request.auth.uid)) && 
+          get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin'));
+    }
+
+    function isApprovedStaff() {
+      return isAuthenticated() && 
+        (isAdmin() || 
+         (exists(/databases/$(database)/documents/users/$(request.auth.uid)) && 
+          get(/databases/$(database)/documents/users/$(request.auth.uid)).data.isApproved == true));
+    }
+
+    function isValidAlert(data) {
+      return data.email is string &&
+             data.heure is timestamp &&
+             data.appareil is string &&
+             data.lu is bool;
     }
 
     function isTimeLocked() {
@@ -57,9 +71,6 @@ service cloud.firestore {
     }
 
     function isWithinServiceHours() {
-      // Service hours: 06:00 - 22:30
-      // Note: Firestore request.time is UTC. 
-      // We assume the app operates in a specific timezone, but for rules we check raw hours.
       let hour = request.time.hours();
       let minute = request.time.minutes();
       let time = hour * 60 + minute;
@@ -67,11 +78,7 @@ service cloud.firestore {
     }
 
     function canPerformAction() {
-      return true;
-    }
-
-    function isApprovedStaff() {
-      return isAuthenticated();
+      return isAdmin() || !isTimeLocked() || isWithinServiceHours();
     }
 
     function isValidOrder(data) {
@@ -89,8 +96,7 @@ service cloud.firestore {
              data.dateRetraitPrevue is string &&
              data.isExpress is bool &&
              data.boutiqueSource in ['Senade', 'Gankpodo'] &&
-             (!('transactionId' in data) || data.transactionId is string) &&
-             (!('noteVocaleUrl' in data) || data.noteVocaleUrl is string);
+             (!('transactionId' in data) || data.transactionId is string);
     }
 
     function isValidMovement(data) {
@@ -99,13 +105,6 @@ service cloud.firestore {
              data.description is string &&
              data.boutiqueSource in ['Senade', 'Gankpodo'] &&
              data.createdBy == request.auth.uid;
-    }
-
-    function isValidConnectionLog(data) {
-      return data.email is string && data.email.size() > 0 &&
-             data.action is string &&
-             data.deviceInfo is string &&
-             data.dateHeure is timestamp;
     }
 
     function isValidNotification(data) {
@@ -127,9 +126,11 @@ service cloud.firestore {
       allow delete: if isAdmin();
     }
 
-    match /connectionLogs/{logId} {
+    match /alertes_admin/{alertId} {
       allow read: if isAdmin();
-      allow create: if isValidConnectionLog(request.resource.data);
+      allow create: if isAuthenticated(); // Allow any authenticated user to trigger an alert
+      allow update: if isAdmin();
+      allow delete: if isAdmin();
     }
 
     match /orders/{orderId} {

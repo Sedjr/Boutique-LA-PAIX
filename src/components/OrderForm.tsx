@@ -5,11 +5,10 @@ import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Order, TypeService, ModePaiement, Boutique } from '../types';
-import { VoiceRecorder } from './VoiceRecorder';
 import { db, handleFirestoreError, OperationType } from '../firebase';
 import { collection, addDoc, updateDoc, doc, serverTimestamp, query, where, getDocs } from 'firebase/firestore';
 import { toast } from 'sonner';
-import { X, Calendar as CalendarIcon, Zap, Store, Loader2, AlertCircle, Camera, Image as ImageIcon, CheckCircle2 } from 'lucide-react';
+import { X, Calendar as CalendarIcon, Zap, Store, Loader2, AlertCircle, CheckCircle2 } from 'lucide-react';
 import { Checkbox } from '@/components/ui/checkbox';
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
@@ -20,9 +19,10 @@ interface OrderFormProps {
   onClose: () => void;
   userBoutique: Boutique;
   isAdmin: boolean;
+  agentName: string;
 }
 
-export const OrderForm: React.FC<OrderFormProps> = ({ initialOrder, onClose, userBoutique, isAdmin }) => {
+export const OrderForm: React.FC<OrderFormProps> = ({ initialOrder, onClose, userBoutique, isAdmin, agentName }) => {
   const today = new Date().toISOString().split('T')[0];
   const defaultRetrait = new Date();
   defaultRetrait.setDate(defaultRetrait.getDate() + 4);
@@ -44,14 +44,14 @@ export const OrderForm: React.FC<OrderFormProps> = ({ initialOrder, onClose, use
     dateRetraitPrevue: defaultRetraitStr,
     isExpress: false,
     boutiqueSource: userBoutique === 'Toutes' ? 'Senade' : userBoutique as any,
-    noteVocaleUrl: '',
+    agent_saisie: agentName,
     ...initialOrder
   });
 
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isCheckingFacture, setIsCheckingFacture] = useState(false);
   const [factureError, setFactureError] = useState<string | null>(null);
-  const [isUploadingPhoto, setIsUploadingPhoto] = useState(false);
+  const [submitError, setSubmitError] = useState<boolean>(false);
 
   // Check uniqueness of Numero Facture
   const checkFactureUniqueness = async (numero: string) => {
@@ -99,38 +99,24 @@ export const OrderForm: React.FC<OrderFormProps> = ({ initialOrder, onClose, use
 
   const isWithinServiceHours = () => {
     const now = new Date();
+    const day = now.getDay();
     const hours = now.getHours();
     const minutes = now.getMinutes();
     const time = hours * 60 + minutes;
+    
+    if (day === 0) return false;
+    
     const start = 6 * 60; // 06:00
     const end = 22 * 60 + 30; // 22:30
     return time >= start && time <= end;
   };
 
-  const handlePhotoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-
-    setIsUploadingPhoto(true);
-    try {
-      const storageRef = ref(storage, `photos_preuve/${Date.now()}_${file.name}`);
-      const snapshot = await uploadBytes(storageRef, file);
-      const url = await getDownloadURL(snapshot.ref);
-      setFormData(prev => ({ ...prev, photoPreuveUrl: url }));
-      toast.success('Photo ajoutée');
-    } catch (err) {
-      console.error("Error uploading photo:", err);
-      toast.error('Erreur lors de l\'envoi de la photo');
-    } finally {
-      setIsUploadingPhoto(false);
-    }
-  };
-
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const handleSubmit = async (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
+    setSubmitError(false);
 
     if (!isAdmin && !isWithinServiceHours()) {
-      toast.error("Action refusée : En dehors des heures de service (06:00 - 22:30)");
+      toast.error("La boutique est fermée. Revenez demain à 06h00.");
       return;
     }
 
@@ -140,40 +126,56 @@ export const OrderForm: React.FC<OrderFormProps> = ({ initialOrder, onClose, use
     }
     setIsSubmitting(true);
 
+    // 5s Timeout for DB operation
+    const timeoutPromise = new Promise((_, reject) => 
+      setTimeout(() => reject(new Error('TIMEOUT')), 5000)
+    );
+
     try {
       const orderData = {
         ...formData,
+        agent_saisie: agentName, // Ensure it's always up to date
         updatedAt: serverTimestamp(),
       };
 
-      if (initialOrder?.id) {
-        const orderRef = doc(db, 'orders', initialOrder.id);
-        const { id, numeroFacture, createdAt, ...updateData } = orderData as Order;
-        await updateDoc(orderRef, updateData);
-        toast.success('Commande mise à jour');
-      } else {
-        await addDoc(collection(db, 'orders'), {
-          ...orderData,
-          createdAt: serverTimestamp(),
-        });
-        
-        // Notification for large orders (> 50,000 FCFA)
-        if (formData.montantTotal > 50000) {
-          console.log("ALERTE: Commande importante détectée (> 50.000 FCFA). Notification envoyée à l'admin.");
-          // In a real app, this would trigger a Cloud Function via a 'notifications' collection
-          await addDoc(collection(db, 'notifications'), {
-            type: 'LARGE_ORDER',
-            message: `Nouvelle commande de ${formData.montantTotal} FCFA (Facture #${formData.numeroFacture})`,
+      const dbOperation = async () => {
+        if (initialOrder?.id) {
+          const orderRef = doc(db, 'orders', initialOrder.id);
+          const { id, numeroFacture, createdAt, ...updateData } = orderData as Order;
+          await updateDoc(orderRef, updateData);
+          return 'UPDATED';
+        } else {
+          await addDoc(collection(db, 'orders'), {
+            ...orderData,
             createdAt: serverTimestamp(),
-            read: false
+            exporte: false
           });
+          
+          if (formData.montantTotal > 50000) {
+            await addDoc(collection(db, 'notifications'), {
+              type: 'LARGE_ORDER',
+              message: `Nouvelle commande de ${formData.montantTotal} FCFA (Facture #${formData.numeroFacture})`,
+              createdAt: serverTimestamp(),
+              read: false
+            });
+          }
+          return 'CREATED';
         }
-        
-        toast.success('Commande créée avec succès');
-      }
+      };
+
+      const result = await Promise.race([dbOperation(), timeoutPromise]);
+      
+      if (result === 'UPDATED') toast.success('Commande mise à jour');
+      else toast.success('Commande créée avec succès');
+      
       onClose();
-    } catch (err) {
-      handleFirestoreError(err, OperationType.WRITE, initialOrder?.id ? `orders/${initialOrder.id}` : 'orders');
+    } catch (err: any) {
+      setSubmitError(true);
+      if (err.message === 'TIMEOUT') {
+        toast.error("Erreur réseau, réessayez dans un instant");
+      } else {
+        handleFirestoreError(err, OperationType.WRITE, initialOrder?.id ? `orders/${initialOrder.id}` : 'orders');
+      }
     } finally {
       setIsSubmitting(false);
     }
@@ -415,64 +417,32 @@ export const OrderForm: React.FC<OrderFormProps> = ({ initialOrder, onClose, use
             </div>
           </div>
 
-          <div className="space-y-2">
-            <Label>Note Vocale de Confirmation</Label>
-            <VoiceRecorder 
-              onUploadComplete={(url) => setFormData({ ...formData, noteVocaleUrl: url })} 
-            />
-          </div>
-
-          <div className="space-y-2">
-            <Label className="flex items-center gap-2">
-              <Camera className="h-4 w-4" /> Photo de Preuve (Linge)
-            </Label>
-            <div className="flex items-center gap-4">
-              <Input
-                type="file"
-                accept="image/*"
-                onChange={handlePhotoUpload}
-                className="hidden"
-                id="photo-upload"
-              />
-              <Label 
-                htmlFor="photo-upload" 
-                className="flex-1 h-12 border-2 border-dashed rounded-lg flex items-center justify-center gap-2 cursor-pointer hover:bg-muted transition-colors"
+          <div className="pt-4 flex flex-col gap-4">
+            {submitError && (
+              <div className="p-4 bg-destructive/10 border border-destructive rounded-lg flex items-center justify-between">
+                <span className="text-destructive font-bold">Erreur réseau détectée</span>
+                <Button type="button" variant="destructive" size="sm" onClick={() => handleSubmit()}>
+                  Réessayer
+                </Button>
+              </div>
+            )}
+            <div className="flex gap-4">
+              <Button 
+                type="submit" 
+                className="flex-1 h-12 text-lg font-bold" 
+                disabled={isSubmitting}
               >
-                {isUploadingPhoto ? (
-                  <Loader2 className="h-5 w-5 animate-spin" />
-                ) : formData.photoPreuveUrl ? (
-                  <CheckCircle2 className="h-5 w-5 text-green-500" />
-                ) : (
-                  <ImageIcon className="h-5 w-5 text-muted-foreground" />
-                )}
-                <span className="font-medium">
-                  {isUploadingPhoto ? 'Envoi...' : formData.photoPreuveUrl ? 'Photo enregistrée' : 'Prendre/Choisir une photo'}
-                </span>
-              </Label>
-              {formData.photoPreuveUrl && (
-                <div className="h-12 w-12 rounded-lg overflow-hidden border">
-                  <img src={formData.photoPreuveUrl} alt="Preuve" className="h-full w-full object-cover" />
-                </div>
-              )}
+                {isSubmitting ? 'Enregistrement...' : initialOrder ? 'Mettre à jour' : 'Valider la Commande'}
+              </Button>
+              <Button 
+                type="button" 
+                variant="outline" 
+                className="h-12 px-8" 
+                onClick={onClose}
+              >
+                Annuler
+              </Button>
             </div>
-          </div>
-
-          <div className="pt-4 flex gap-4">
-            <Button 
-              type="submit" 
-              className="flex-1 h-12 text-lg font-bold" 
-              disabled={isSubmitting}
-            >
-              {isSubmitting ? 'Enregistrement...' : initialOrder ? 'Mettre à jour' : 'Valider la Commande'}
-            </Button>
-            <Button 
-              type="button" 
-              variant="outline" 
-              className="h-12 px-8" 
-              onClick={onClose}
-            >
-              Annuler
-            </Button>
           </div>
         </form>
       </CardContent>

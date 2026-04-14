@@ -15,18 +15,23 @@ import { Plus, Wallet, ArrowUpCircle, ArrowDownCircle, History, Store, X } from 
 interface CashManagementProps {
   userBoutique: Boutique;
   isAdmin: boolean;
+  agentName: string;
+  timeLockEnabled: boolean;
 }
 
-export const CashManagement: React.FC<CashManagementProps> = ({ userBoutique, isAdmin }) => {
+export const CashManagement: React.FC<CashManagementProps> = ({ userBoutique, isAdmin, agentName, timeLockEnabled }) => {
   const [movements, setMovements] = useState<CashMovement[]>([]);
   const [showForm, setShowForm] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [submitError, setSubmitError] = useState<boolean>(false);
 
   const [formData, setFormData] = useState<Partial<CashMovement>>({
     typeMouvement: 'Dépense Boutique',
     montant: 0,
     description: '',
     boutiqueSource: userBoutique === 'Toutes' ? 'Senade' : userBoutique as any,
+    agent_saisie: agentName,
   });
 
   useEffect(() => {
@@ -56,30 +61,45 @@ export const CashManagement: React.FC<CashManagementProps> = ({ userBoutique, is
   }, [userBoutique]);
 
   const isWithinServiceHours = () => {
+    if (!timeLockEnabled) return true;
     const now = new Date();
+    const day = now.getDay();
     const hours = now.getHours();
     const minutes = now.getMinutes();
     const time = hours * 60 + minutes;
+    
+    if (day === 0) return false;
+    
     const start = 6 * 60; // 06:00
     const end = 22 * 60 + 30; // 22:30
     return time >= start && time <= end;
   };
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const handleSubmit = async (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
     if (!auth.currentUser) return;
+    setSubmitError(false);
 
     if (!isAdmin && !isWithinServiceHours()) {
-      toast.error("Action refusée : En dehors des heures de service (06:00 - 22:30)");
+      toast.error("La boutique est fermée. Revenez demain à 06h00.");
       return;
     }
 
+    setIsSubmitting(true);
+    const timeoutPromise = new Promise((_, reject) => 
+      setTimeout(() => reject(new Error('TIMEOUT')), 5000)
+    );
+
     try {
-      await addDoc(collection(db, 'cashMovements'), {
+      const dbOperation = addDoc(collection(db, 'cashMovements'), {
         ...formData,
+        agent_saisie: agentName,
         dateHeure: serverTimestamp(),
         createdBy: auth.currentUser.uid,
       });
+
+      await Promise.race([dbOperation, timeoutPromise]);
+
       toast.success('Mouvement enregistré');
       setShowForm(false);
       setFormData({
@@ -87,9 +107,17 @@ export const CashManagement: React.FC<CashManagementProps> = ({ userBoutique, is
         montant: 0,
         description: '',
         boutiqueSource: userBoutique === 'Toutes' ? 'Senade' : userBoutique as any,
+        agent_saisie: agentName,
       });
-    } catch (err) {
-      handleFirestoreError(err, OperationType.WRITE, 'cashMovements');
+    } catch (err: any) {
+      setSubmitError(true);
+      if (err.message === 'TIMEOUT') {
+        toast.error("Erreur réseau, réessayez dans un instant");
+      } else {
+        handleFirestoreError(err, OperationType.WRITE, 'cashMovements');
+      }
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
@@ -204,9 +232,21 @@ export const CashManagement: React.FC<CashManagementProps> = ({ userBoutique, is
                 />
               </div>
 
-              <div className="md:col-span-2 flex gap-2 pt-2">
-                <Button type="submit" className="flex-1">Enregistrer</Button>
-                <Button type="button" variant="outline" onClick={() => setShowForm(false)}>Annuler</Button>
+              <div className="md:col-span-2 flex flex-col gap-2 pt-2">
+                {submitError && (
+                  <div className="p-4 bg-destructive/10 border border-destructive rounded-lg flex items-center justify-between mb-2">
+                    <span className="text-destructive font-bold">Erreur réseau détectée</span>
+                    <Button type="button" variant="destructive" size="sm" onClick={() => handleSubmit()}>
+                      Réessayer
+                    </Button>
+                  </div>
+                )}
+                <div className="flex gap-2">
+                  <Button type="submit" className="flex-1" disabled={isSubmitting}>
+                    {isSubmitting ? 'Enregistrement...' : 'Enregistrer'}
+                  </Button>
+                  <Button type="button" variant="outline" onClick={() => setShowForm(false)}>Annuler</Button>
+                </div>
               </div>
             </form>
           </CardContent>
@@ -231,6 +271,7 @@ export const CashManagement: React.FC<CashManagementProps> = ({ userBoutique, is
                 <TableHead>Type</TableHead>
                 <TableHead>Boutique</TableHead>
                 <TableHead>Description</TableHead>
+                {isAdmin && <TableHead>Agent</TableHead>}
                 <TableHead className="text-right">Montant</TableHead>
               </TableRow>
             </TableHeader>
@@ -248,6 +289,11 @@ export const CashManagement: React.FC<CashManagementProps> = ({ userBoutique, is
                     </div>
                   </TableCell>
                   <TableCell className="font-medium">{m.description}</TableCell>
+                  {isAdmin && (
+                    <TableCell className="text-[10px] font-bold text-muted-foreground uppercase">
+                      {m.agent_saisie || 'Inconnu'}
+                    </TableCell>
+                  )}
                   <TableCell className={`text-right font-bold ${m.typeMouvement === 'Recette' ? 'text-green-600' : 'text-destructive'}`}>
                     {m.typeMouvement === 'Recette' ? '+' : '-'} {m.montant.toLocaleString()} F
                   </TableCell>

@@ -1,8 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { db, handleFirestoreError, OperationType } from '../firebase';
-import { collection, query, onSnapshot, doc, updateDoc, getDoc } from 'firebase/firestore';
-import { UserProfile, Boutique, UserRole, ConnectionLog } from '../types';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { collection, query, onSnapshot, doc, updateDoc, getDoc, writeBatch, where, getDocs, orderBy } from 'firebase/firestore';
+import { UserProfile, Boutique, UserRole, AdminAlert } from '../types';
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Badge } from '@/components/ui/badge';
@@ -10,12 +10,11 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Switch } from '@/components/ui/switch';
 import { Label } from '@/components/ui/label';
 import { toast } from 'sonner';
-import { Users, Shield, Store, CheckCircle2, XCircle, UserCheck, UserMinus, Clock, Lock, Unlock, History, Monitor } from 'lucide-react';
-import { limit, orderBy } from 'firebase/firestore';
+import { Users, Shield, Store, CheckCircle2, XCircle, UserCheck, UserMinus, Clock, Lock, Unlock, AlertCircle } from 'lucide-react';
 
 export const UserManagement: React.FC = () => {
   const [users, setUsers] = useState<UserProfile[]>([]);
-  const [logs, setLogs] = useState<ConnectionLog[]>([]);
+  const [alerts, setAlerts] = useState<AdminAlert[]>([]);
   const [loading, setLoading] = useState(true);
   const [timeLockEnabled, setTimeLockEnabled] = useState(true);
 
@@ -40,26 +39,53 @@ export const UserManagement: React.FC = () => {
       handleFirestoreError(error, OperationType.LIST, 'users');
     });
 
-    const logsQuery = query(
-      collection(db, 'connectionLogs'),
-      orderBy('dateHeure', 'desc'),
-      limit(20)
+    const alertsQuery = query(
+      collection(db, 'alertes_admin'),
+      where('lu', '==', false),
+      orderBy('heure', 'desc')
     );
-    const unsubscribeLogs = onSnapshot(logsQuery, (snapshot) => {
+    const unsubscribeAlerts = onSnapshot(alertsQuery, (snapshot) => {
       const data = snapshot.docs.map(doc => ({
         id: doc.id,
         ...doc.data()
-      })) as ConnectionLog[];
-      setLogs(data);
+      })) as AdminAlert[];
+      setAlerts(data);
     }, (error) => {
-      handleFirestoreError(error, OperationType.LIST, 'connectionLogs');
+      handleFirestoreError(error, OperationType.LIST, 'alertes_admin');
     });
 
     return () => {
       unsubscribeUsers();
-      unsubscribeLogs();
+      unsubscribeAlerts();
     };
   }, []);
+
+  const handleApproveUser = async (uid: string, email: string) => {
+    try {
+      const batch = writeBatch(db);
+      
+      // Approve user
+      batch.update(doc(db, 'users', uid), { 
+        isApproved: true,
+        isActive: true,
+        role: 'secretaire',
+        boutiqueAssignee: 'Senade'
+      });
+      
+      // Mark alerts for this email as read
+      const alertsRef = collection(db, 'alertes_admin');
+      const q = query(alertsRef, where('email', '==', email), where('lu', '==', false));
+      const alertDocs = await getDocs(q);
+      alertDocs.forEach(alertDoc => {
+        batch.update(doc(db, 'alertes_admin', alertDoc.id), { lu: true });
+      });
+      
+      await batch.commit();
+      toast.success('Utilisateur approuvé et alertes traitées');
+    } catch (err) {
+      handleFirestoreError(err, OperationType.UPDATE, `users/${uid}`);
+    }
+  };
 
   const handleUpdateUser = async (uid: string, updates: Partial<UserProfile>) => {
     try {
@@ -78,6 +104,10 @@ export const UserManagement: React.FC = () => {
     } catch (err) {
       handleFirestoreError(err, OperationType.UPDATE, 'settings/global');
     }
+  };
+
+  const isDuplicateEmail = (email: string) => {
+    return users.filter(u => u.email === email).length > 1;
   };
 
   return (
@@ -114,6 +144,53 @@ export const UserManagement: React.FC = () => {
         </CardContent>
       </Card>
 
+      {alerts.length > 0 && (
+        <Card className="border-2 border-destructive/20 bg-destructive/5">
+          <CardHeader>
+            <CardTitle className="text-destructive flex items-center gap-2">
+              <AlertCircle className="h-5 w-5" />
+              Nouvelles Tentatives de Connexion ({alerts.length})
+            </CardTitle>
+            <CardDescription>
+              Ces utilisateurs attendent votre approbation pour accéder au système.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="p-0">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Email</TableHead>
+                  <TableHead>Heure</TableHead>
+                  <TableHead>Appareil</TableHead>
+                  <TableHead className="text-right">Action</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {alerts.map((alert) => (
+                  <TableRow key={alert.id}>
+                    <TableCell className="font-bold">{alert.email}</TableCell>
+                    <TableCell className="text-xs">{alert.heure?.toDate().toLocaleString()}</TableCell>
+                    <TableCell className="text-[10px] text-muted-foreground truncate max-w-[200px]">{alert.appareil}</TableCell>
+                    <TableCell className="text-right">
+                      <Button 
+                        size="sm" 
+                        className="bg-green-600 hover:bg-green-700 font-bold"
+                        onClick={() => {
+                          const user = users.find(u => u.email === alert.email);
+                          if (user) handleApproveUser(user.uid, user.email);
+                        }}
+                      >
+                        Approuver
+                      </Button>
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </CardContent>
+        </Card>
+      )}
+
       <Card className="border-2">
         <CardHeader className="bg-muted/30">
           <CardTitle className="flex items-center gap-2 text-sm uppercase tracking-wider">
@@ -137,7 +214,14 @@ export const UserManagement: React.FC = () => {
                 <TableRow key={u.uid}>
                   <TableCell>
                     <div className="flex flex-col">
-                      <span className="font-bold">{u.displayName || 'Sans nom'}</span>
+                      <div className="flex items-center gap-2">
+                        <span className="font-bold">{u.displayName || 'Sans nom'}</span>
+                        {isDuplicateEmail(u.email) && (
+                          <Badge variant="destructive" className="h-5 text-[10px] px-1.5 font-black animate-pulse">
+                            ⚠️ DOUBLON
+                          </Badge>
+                        )}
+                      </div>
                       <span className="text-xs text-muted-foreground">{u.email}</span>
                     </div>
                   </TableCell>
@@ -172,7 +256,9 @@ export const UserManagement: React.FC = () => {
                   </TableCell>
                   <TableCell>
                     {u.hasAcceptedContract ? (
-                      <Badge variant="outline" className="bg-blue-50 text-blue-700 border-blue-200">Signé</Badge>
+                      <Badge variant="outline" className="bg-blue-50 text-blue-700 border-blue-200 gap-1">
+                        <CheckCircle2 className="h-3 w-3" /> Signé
+                      </Badge>
                     ) : (
                       <Badge variant="outline" className="bg-slate-50 text-slate-400 border-slate-200">Non signé</Badge>
                     )}
@@ -188,7 +274,7 @@ export const UserManagement: React.FC = () => {
                           size="sm" 
                           variant="outline" 
                           className="h-8 text-xs gap-1 border-orange-200 text-orange-600 hover:bg-orange-50"
-                          onClick={() => handleUpdateUser(u.uid, { isApproved: true })}
+                          onClick={() => handleApproveUser(u.uid, u.email)}
                         >
                           <UserCheck className="h-3 w-3" /> Approuver
                         </Button>
@@ -215,52 +301,6 @@ export const UserManagement: React.FC = () => {
                   </TableCell>
                 </TableRow>
               )}
-            </TableBody>
-          </Table>
-        </CardContent>
-      </Card>
-
-      <Card className="border-2 border-muted">
-        <CardHeader className="pb-2">
-          <CardTitle className="text-sm font-black uppercase tracking-widest flex items-center gap-2">
-            <History className="h-4 w-4" /> Historique Accès (Audit Trail)
-          </CardTitle>
-        </CardHeader>
-        <CardContent className="p-0">
-          <Table>
-            <TableHeader>
-              <TableRow className="bg-muted/30">
-                <TableHead className="h-10 text-[10px] uppercase font-bold">Utilisateur</TableHead>
-                <TableHead className="h-10 text-[10px] uppercase font-bold">Action</TableHead>
-                <TableHead className="h-10 text-[10px] uppercase font-bold">Appareil</TableHead>
-                <TableHead className="h-10 text-[10px] uppercase font-bold">Date/Heure</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {logs.map((log) => (
-                <TableRow key={log.id} className="hover:bg-muted/10">
-                  <TableCell className="py-2 text-xs font-medium">{log.email}</TableCell>
-                  <TableCell className="py-2">
-                    <Badge 
-                      variant="outline" 
-                      className={`text-[10px] px-1.5 py-0 ${
-                        log.action === 'Connexion' ? 'bg-green-50 text-green-700 border-green-200' : 
-                        log.action === 'Déconnexion' ? 'bg-slate-50 text-slate-600 border-slate-200' : 
-                        'bg-red-50 text-red-700 border-red-200'
-                      }`}
-                    >
-                      {log.action}
-                    </Badge>
-                  </TableCell>
-                  <TableCell className="py-2 text-[10px] text-muted-foreground flex items-center gap-1">
-                    <Monitor className="h-3 w-3" />
-                    {log.deviceInfo}
-                  </TableCell>
-                  <TableCell className="py-2 text-[10px] text-muted-foreground">
-                    {log.dateHeure?.toDate().toLocaleString('fr-FR')}
-                  </TableCell>
-                </TableRow>
-              ))}
             </TableBody>
           </Table>
         </CardContent>

@@ -21,10 +21,13 @@ export interface Order {
   dateRetraitPrevue: string;
   isExpress: boolean;
   boutiqueSource: Boutique;
-  noteVocaleUrl?: string;
-  photoPreuveUrl?: string;
   createdAt: any;
   updatedAt: any;
+  agent_saisie?: string;
+  exporte?: boolean;
+  recuEnvoye?: boolean;
+  envoyePar?: string;
+  dateEnvoiRecu?: any;
 }
 
 export interface CashMovement {
@@ -35,6 +38,8 @@ export interface CashMovement {
   dateHeure: any;
   boutiqueSource: Boutique;
   createdBy: string;
+  agent_saisie?: string;
+  exporte?: boolean;
 }
 
 export interface UserProfile {
@@ -49,14 +54,14 @@ export interface UserProfile {
   displayName?: string;
 }
 
-export interface ConnectionLog {
-  id?: string;
-  email: string;
-  action: 'Connexion' | 'Déconnexion' | 'Tentative Refusée';
-  dateHeure: any;
-  deviceInfo: string;
-}
-
 export interface AppSettings {
   timeLockEnabled: boolean;
+}
+
+export interface AdminAlert {
+  id?: string;
+  email: string;
+  heure: any;
+  appareil: string;
+  lu: boolean;
 }
