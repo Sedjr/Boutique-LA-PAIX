@@ -7,7 +7,8 @@ import {
   signOut, 
   signInWithEmailAndPassword, 
   createUserWithEmailAndPassword,
-  updateProfile
+  updateProfile,
+  sendPasswordResetEmail
 } from 'firebase/auth';
 import { doc, onSnapshot, setDoc, collection, query, where, serverTimestamp } from 'firebase/firestore';
 import { UserProfile, Order, AdminAlert } from './types';
@@ -201,21 +202,72 @@ export default function App() {
     try {
       if (loginMode === 'register') {
         const userCredential = await createUserWithEmailAndPassword(auth, email, password);
-        await updateProfile(userCredential.user, { displayName });
+        const firebaseUser = userCredential.user;
+        
+        // Update Firebase Auth profile
+        await updateProfile(firebaseUser, { displayName });
+
+        // Create the user document in Firestore immediately
+        const userRef = doc(db, 'users', firebaseUser.uid);
+        const newUser: UserProfile = {
+          uid: firebaseUser.uid,
+          email: firebaseUser.email || '',
+          role: 'secretaire',
+          boutiqueAssignee: 'Senade',
+          displayName: displayName || firebaseUser.email || '',
+          isActive: true,
+          isApproved: false,
+          hasAcceptedContract: false
+        };
+        await setDoc(userRef, newUser);
+
+        // Create admin alert for new user
+        await setDoc(doc(collection(db, 'alertes_admin')), {
+          email: firebaseUser.email,
+          heure: serverTimestamp(),
+          appareil: navigator.userAgent,
+          lu: false
+        });
+
+        toast.success("Compte créé ! Veuillez signer le contrat.");
       } else {
         await signInWithEmailAndPassword(auth, email, password);
+        toast.success("Connexion réussie !");
       }
-      toast.success(loginMode === 'register' ? "Compte créé !" : "Connexion réussie !");
     } catch (err: any) {
       console.error("Email Auth Error:", err);
       let message = "Une erreur est survenue";
-      if (err.code === 'auth/email-already-in-use') message = "Cet email est déjà utilisé";
-      if (err.code === 'auth/wrong-password') message = "Mot de passe incorrect";
-      if (err.code === 'auth/user-not-found') message = "Utilisateur non trouvé";
+      if (err.code === 'auth/email-already-in-use') {
+        message = "Cet email est déjà utilisé. Basculement vers la connexion...";
+        setLoginMode('login');
+      }
+      if (err.code === 'auth/operation-not-allowed') {
+        message = "La connexion par Email/Mot de passe n'est pas activée dans votre console Firebase.";
+      }
+      if (err.code === 'auth/wrong-password' || err.code === 'auth/user-not-found' || err.code === 'auth/invalid-credential' || err.code === 'auth/invalid-login-credentials') {
+        message = "Email ou mot de passe incorrect. Veuillez vérifier vos identifiants.";
+      }
+      if (err.code === 'auth/invalid-email') {
+        message = "Format d'email invalide.";
+      }
       if (err.code === 'auth/weak-password') message = "Mot de passe trop faible (min 6 car.)";
       toast.error(message);
     } finally {
       setIsLoggingIn(false);
+    }
+  };
+
+  const handleForgotPassword = async () => {
+    if (!email) {
+      toast.error("Veuillez saisir votre email pour réinitialiser le mot de passe.");
+      return;
+    }
+    try {
+      await sendPasswordResetEmail(auth, email);
+      toast.success("Email de réinitialisation envoyé ! Vérifiez votre boîte de réception.");
+    } catch (err: any) {
+      console.error("Reset Password Error:", err);
+      toast.error("Erreur : " + err.message);
     }
   };
 
@@ -314,7 +366,18 @@ export default function App() {
                 />
               </div>
               <div className="space-y-2">
-                <Label htmlFor="password">Mot de passe</Label>
+                <div className="flex items-center justify-between">
+                  <Label htmlFor="password">Mot de passe</Label>
+                  {loginMode === 'login' && (
+                    <button 
+                      type="button"
+                      onClick={handleForgotPassword}
+                      className="text-xs font-medium text-primary hover:underline"
+                    >
+                      Mot de passe oublié ?
+                    </button>
+                  )}
+                </div>
                 <Input 
                   id="password" 
                   type="password" 
