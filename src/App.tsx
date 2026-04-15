@@ -458,39 +458,39 @@ export default function App() {
           />
         ) : (
           <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full space-y-6">
-            <TabsList className="grid w-full grid-cols-3 md:grid-cols-4 h-14 p-1 bg-muted/50 border-2">
-              <TabsTrigger value="orders" className="text-sm md:text-lg font-bold gap-2">
-                <ListTodo className="h-5 w-5" />
+            <TabsList className="flex w-full h-14 p-1 bg-muted/50 border-2 overflow-x-auto overflow-y-hidden scrollbar-hide no-scrollbar">
+              <TabsTrigger value="orders" className="flex-shrink-0 text-sm md:text-lg font-bold gap-2 px-4">
+                <ListTodo className="h-4 w-4 md:h-5 md:h-5" />
                 Commandes
               </TabsTrigger>
-              <TabsTrigger value="cash" className="text-sm md:text-lg font-bold gap-2">
-                <Wallet className="h-5 w-5" />
+              <TabsTrigger value="cash" className="flex-shrink-0 text-sm md:text-lg font-bold gap-2 px-4">
+                <Wallet className="h-4 w-4 md:h-5 md:h-5" />
                 Caisse
               </TabsTrigger>
               {user.role === 'secretaire' && (
-                <TabsTrigger value="mycash" className="text-sm md:text-lg font-bold gap-2">
-                  <BarChart3 className="h-5 w-5" />
+                <TabsTrigger value="mycash" className="flex-shrink-0 text-sm md:text-lg font-bold gap-2 px-4">
+                  <BarChart3 className="h-4 w-4 md:h-5 md:h-5" />
                   Ma Caisse
                 </TabsTrigger>
               )}
               {user.role === 'admin' && (
-                <TabsTrigger value="bilan" className="text-sm md:text-lg font-bold gap-2">
-                  <BarChart3 className="h-5 w-5" />
+                <TabsTrigger value="bilan" className="flex-shrink-0 text-sm md:text-lg font-bold gap-2 px-4">
+                  <BarChart3 className="h-4 w-4 md:h-5 md:h-5" />
                   Bilan
                 </TabsTrigger>
               )}
               {user.role === 'admin' && (
-                <TabsTrigger value="users" className="hidden md:flex text-lg font-bold gap-2 relative">
-                  <UsersIcon className="h-5 w-5" />
+                <TabsTrigger value="users" className="flex-shrink-0 text-sm md:text-lg font-bold gap-2 px-4 relative">
+                  <UsersIcon className="h-4 w-4 md:h-5 md:h-5" />
                   Équipe
                   {unreadAlertsCount > 0 && (
-                    <span className="absolute -top-1 -right-1 h-3 w-3 bg-destructive rounded-full border-2 border-white animate-pulse" />
+                    <span className="absolute top-1 right-1 h-2 w-2 bg-destructive rounded-full border border-white animate-pulse" />
                   )}
                 </TabsTrigger>
               )}
               {user.role === 'admin' && (
-                <TabsTrigger value="settings" className="text-sm md:text-lg font-bold gap-2">
-                  <SettingsIcon className="h-5 w-5" />
+                <TabsTrigger value="settings" className="flex-shrink-0 text-sm md:text-lg font-bold gap-2 px-4">
+                  <SettingsIcon className="h-4 w-4 md:h-5 md:h-5" />
                   Paramètres
                 </TabsTrigger>
               )}
