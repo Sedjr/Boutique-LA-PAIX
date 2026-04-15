@@ -199,13 +199,16 @@ export default function App() {
     if (isLoggingIn) return;
     setIsLoggingIn(true);
 
+    const cleanEmail = email.trim();
+    const cleanPassword = password.trim();
+
     try {
       if (loginMode === 'register') {
-        const userCredential = await createUserWithEmailAndPassword(auth, email, password);
+        const userCredential = await createUserWithEmailAndPassword(auth, cleanEmail, cleanPassword);
         const firebaseUser = userCredential.user;
         
         // Update Firebase Auth profile
-        await updateProfile(firebaseUser, { displayName });
+        await updateProfile(firebaseUser, { displayName: displayName.trim() });
 
         // Create the user document in Firestore immediately
         const userRef = doc(db, 'users', firebaseUser.uid);
@@ -214,7 +217,7 @@ export default function App() {
           email: firebaseUser.email || '',
           role: 'secretaire',
           boutiqueAssignee: 'Senade',
-          displayName: displayName || firebaseUser.email || '',
+          displayName: displayName.trim() || firebaseUser.email || '',
           isActive: true,
           isApproved: false,
           hasAcceptedContract: false
@@ -231,7 +234,7 @@ export default function App() {
 
         toast.success("Compte créé ! Veuillez signer le contrat.");
       } else {
-        await signInWithEmailAndPassword(auth, email, password);
+        await signInWithEmailAndPassword(auth, cleanEmail, cleanPassword);
         toast.success("Connexion réussie !");
       }
     } catch (err: any) {
