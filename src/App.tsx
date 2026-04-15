@@ -214,18 +214,7 @@ export default function App() {
     );
   }
 
-  // Time-based access control (Admins bypass this)
-  if (!isWithinServiceHours() && user?.role !== 'admin') {
-    return (
-      <div className="h-screen w-screen flex flex-col items-center justify-center bg-background p-4 text-center">
-        <Store className="h-16 w-16 text-muted-foreground mb-4" />
-        <h1 className="text-2xl font-black mb-2">LA BOUTIQUE EST FERMÉE</h1>
-        <p className="text-muted-foreground font-bold">Revenez demain à 06h00.</p>
-        {user && <Button onClick={handleLogout} variant="ghost" className="mt-8">Se déconnecter</Button>}
-      </div>
-    );
-  }
-
+  // 1. PRIORITY: SHOW LOGIN PAGE FIRST
   if (!user) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-muted/30 p-4">
@@ -255,12 +244,26 @@ export default function App() {
     );
   }
 
-  if (user && !user.isActive && user.role !== 'admin') {
+  // 2. SECURITY: CHECK IF ACCOUNT IS ACTIVE
+  if (!user.isActive && user.role !== 'admin') {
     handleLogout();
     return null;
   }
 
-  if (user && !user.hasAcceptedContract && user.role !== 'admin') {
+  // 3. TIME LOCK: ONLY FOR SECRETARIES (ADMINS BYPASS)
+  if (!isWithinServiceHours() && user.role !== 'admin') {
+    return (
+      <div className="h-screen w-screen flex flex-col items-center justify-center bg-background p-4 text-center">
+        <Store className="h-16 w-16 text-muted-foreground mb-4" />
+        <h1 className="text-2xl font-black mb-2">LA BOUTIQUE EST FERMÉE</h1>
+        <p className="text-muted-foreground font-bold">Revenez demain à 06h00.</p>
+        <Button onClick={handleLogout} variant="ghost" className="mt-8">Se déconnecter</Button>
+      </div>
+    );
+  }
+
+  // 4. CONTRACT & APPROVAL
+  if (!user.hasAcceptedContract && user.role !== 'admin') {
     return (
       <Contract 
         userUid={user.uid} 
