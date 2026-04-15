@@ -87,6 +87,30 @@ export const UserManagement: React.FC = () => {
     }
   };
 
+  const handleRefuseUser = async (uid: string, email: string) => {
+    if (!window.confirm(`Voulez-vous refuser et supprimer définitivement la demande de ${email} ?`)) return;
+    
+    try {
+      const batch = writeBatch(db);
+      
+      // Delete user document
+      batch.delete(doc(db, 'users', uid));
+      
+      // Mark alerts for this email as read/delete them
+      const alertsRef = collection(db, 'alertes_admin');
+      const q = query(alertsRef, where('email', '==', email));
+      const alertDocs = await getDocs(q);
+      alertDocs.forEach(alertDoc => {
+        batch.delete(doc(db, 'alertes_admin', alertDoc.id));
+      });
+      
+      await batch.commit();
+      toast.success('Demande refusée et supprimée');
+    } catch (err) {
+      handleFirestoreError(err, OperationType.DELETE, `users/${uid}`);
+    }
+  };
+
   const handleUpdateUser = async (uid: string, updates: Partial<UserProfile>) => {
     try {
       await updateDoc(doc(db, 'users', uid), updates);
@@ -185,7 +209,18 @@ export const UserManagement: React.FC = () => {
                     <TableCell className="font-bold">{alert.email}</TableCell>
                     <TableCell className="text-xs">{alert.heure?.toDate().toLocaleString()}</TableCell>
                     <TableCell className="text-[10px] text-muted-foreground truncate max-w-[200px]">{alert.appareil}</TableCell>
-                    <TableCell className="text-right">
+                    <TableCell className="text-right flex justify-end gap-2">
+                      <Button 
+                        size="sm" 
+                        variant="destructive"
+                        className="font-bold"
+                        onClick={() => {
+                          const user = users.find(u => u.email === alert.email);
+                          if (user) handleRefuseUser(user.uid, user.email);
+                        }}
+                      >
+                        Refuser
+                      </Button>
                       <Button 
                         size="sm" 
                         className="bg-green-600 hover:bg-green-700 font-bold"
