@@ -90,6 +90,10 @@ export const UserManagement: React.FC = () => {
   const handleRefuseUser = async (uid: string, email: string) => {
     if (!window.confirm(`Voulez-vous refuser et supprimer définitivement la demande de ${email} ?`)) return;
     
+    // Optimistic local update
+    setUsers(prev => prev.filter(u => u.uid !== uid));
+    setAlerts(prev => prev.filter(a => a.email !== email));
+
     try {
       const batch = writeBatch(db);
       
@@ -211,9 +215,8 @@ export const UserManagement: React.FC = () => {
                     <TableCell className="text-[10px] text-muted-foreground truncate max-w-[200px]">{alert.appareil}</TableCell>
                     <TableCell className="text-right flex justify-end gap-2">
                       <Button 
-                        size="sm" 
                         variant="destructive"
-                        className="font-bold"
+                        className="font-bold h-11 px-4"
                         onClick={() => {
                           const user = users.find(u => u.email === alert.email);
                           if (user) handleRefuseUser(user.uid, user.email);
@@ -222,8 +225,7 @@ export const UserManagement: React.FC = () => {
                         Refuser
                       </Button>
                       <Button 
-                        size="sm" 
-                        className="bg-green-600 hover:bg-green-700 font-bold"
+                        className="bg-green-600 hover:bg-green-700 font-bold h-11 px-4"
                         onClick={() => {
                           const user = users.find(u => u.email === alert.email);
                           if (user) handleApproveUser(user.uid, user.email);

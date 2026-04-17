@@ -191,7 +191,7 @@ export const OrderForm: React.FC<OrderFormProps> = ({ initialOrder, onClose, use
           variant="ghost" 
           size="icon" 
           onClick={onClose}
-          className="absolute top-[15px] right-[15px] h-10 w-10 rounded-full bg-black/20 p-2 text-black hover:bg-black/30 transition-colors z-50"
+          className="absolute top-[10px] right-[10px] h-11 w-11 rounded-full bg-black/20 p-2 text-black hover:bg-black/30 transition-colors z-50"
         >
           <X className="h-6 w-6 stroke-[3px]" />
         </Button>
