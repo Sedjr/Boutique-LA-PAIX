@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { db, handleFirestoreError, OperationType, auth } from '../firebase';
-import { collection, addDoc, query, orderBy, onSnapshot, serverTimestamp, where, limit } from 'firebase/firestore';
+import { collection, addDoc, query, orderBy, onSnapshot, serverTimestamp, where, limit, deleteDoc, doc, getDocs } from 'firebase/firestore';
 import { CashMovement, Boutique, TypeMouvement } from '../types';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -10,7 +10,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Badge } from '@/components/ui/badge';
 import { toast } from 'sonner';
-import { Plus, Wallet, ArrowUpCircle, ArrowDownCircle, History, Store, X } from 'lucide-react';
+import { Plus, Wallet, ArrowUpCircle, ArrowDownCircle, History, Store, X, Trash2 } from 'lucide-react';
 
 interface CashManagementProps {
   userBoutique: Boutique;
@@ -145,6 +145,34 @@ export const CashManagement: React.FC<CashManagementProps> = ({ userBoutique, is
     }
   };
 
+  const handleDeleteAll = async () => {
+    if (!isAdmin) return;
+    if (!window.confirm("🔴 ATTENTION: Voulez-vous vraiment supprimer TOUT l'historique de caisse ? Cette action est irréversible.")) return;
+    
+    try {
+      const allSnapshot = await getDocs(collection(db, 'cashMovements'));
+      const count = allSnapshot.docs.length;
+      await Promise.all(allSnapshot.docs.map(d => deleteDoc(d.ref)));
+      toast.success(`Historique vidé (${count} éléments supprimés)`);
+    } catch(err) {
+      toast.error("Erreur lors de la suppression de l'historique");
+      console.error(err);
+    }
+  };
+
+  const handleDeleteMovement = async (id: string, description: string) => {
+    if (!isAdmin) return;
+    if (!window.confirm(`Voulez-vous supprimer ce mouvement ?\n(${description})`)) return;
+    
+    try {
+      await deleteDoc(doc(db, 'cashMovements', id));
+      toast.success("Mouvement supprimé");
+    } catch(err) {
+      toast.error("Erreur lors de la suppression");
+      console.error(err);
+    }
+  };
+
   return (
     <div className="space-y-6">
       <div className="flex justify-between items-center">
@@ -275,9 +303,17 @@ export const CashManagement: React.FC<CashManagementProps> = ({ userBoutique, is
             <History className="h-5 w-5" />
             Historique des flux
           </CardTitle>
-          <Badge variant="outline" className="font-mono">
-            {movements.length} opérations
-          </Badge>
+          <div className="flex items-center gap-4">
+            <Badge variant="outline" className="font-mono">
+              {movements.length} opérations
+            </Badge>
+            {isAdmin && movements.length > 0 && (
+              <Button variant="destructive" size="sm" onClick={handleDeleteAll} className="gap-2">
+                <Trash2 className="h-4 w-4" />
+                Tout supprimer
+              </Button>
+            )}
+          </div>
         </CardHeader>
         <CardContent className="p-0">
           <Table>
@@ -289,6 +325,7 @@ export const CashManagement: React.FC<CashManagementProps> = ({ userBoutique, is
                 <TableHead>Description</TableHead>
                 {isAdmin && <TableHead>Agent</TableHead>}
                 <TableHead className="text-right">Montant</TableHead>
+                {isAdmin && <TableHead className="w-[50px]"></TableHead>}
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -313,11 +350,18 @@ export const CashManagement: React.FC<CashManagementProps> = ({ userBoutique, is
                   <TableCell className={`text-right font-bold ${m.typeMouvement === 'Recette' ? 'text-green-600' : 'text-destructive'}`}>
                     {m.typeMouvement === 'Recette' ? '+' : '-'} {m.montant.toLocaleString()} F
                   </TableCell>
+                  {isAdmin && (
+                    <TableCell>
+                      <Button variant="ghost" size="icon" onClick={() => handleDeleteMovement(m.id!, m.description)} className="text-destructive hover:bg-destructive hover:text-white h-8 w-8">
+                        <Trash2 className="h-4 w-4" />
+                      </Button>
+                    </TableCell>
+                  )}
                 </TableRow>
               ))}
               {movements.length === 0 && !loading && (
                 <TableRow>
-                  <TableCell colSpan={5} className="h-24 text-center text-muted-foreground">
+                  <TableCell colSpan={isAdmin ? 7 : 5} className="h-24 text-center text-muted-foreground">
                     Aucun mouvement enregistré.
                   </TableCell>
                 </TableRow>
