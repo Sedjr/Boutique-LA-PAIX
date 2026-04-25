@@ -5,6 +5,7 @@ import { Order, Boutique, CashMovement } from '../types';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { TrendingUp, Wallet, Clock, Calendar as CalendarIcon, PieChart, Store, ArrowDownCircle, ArrowUpCircle, Banknote, Users } from 'lucide-react';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell } from 'recharts';
 
 interface FinancialBilanProps {
@@ -14,6 +15,12 @@ interface FinancialBilanProps {
 
 export const FinancialBilan: React.FC<FinancialBilanProps> = ({ userBoutique, isAdmin }) => {
   const [viewBoutique, setViewBoutique] = useState<Boutique>(userBoutique === 'Toutes' ? 'Toutes' : userBoutique);
+  
+  // By default: current month (YYYY-MM)
+  const [selectedMonth, setSelectedMonth] = useState<string>(
+    new Date().toISOString().substring(0, 7)
+  );
+
   const [orders, setOrders] = useState<Order[]>([]);
   const [movements, setMovements] = useState<CashMovement[]>([]);
   const [stats, setStats] = useState({
@@ -28,13 +35,19 @@ export const FinancialBilan: React.FC<FinancialBilanProps> = ({ userBoutique, is
   });
 
   useEffect(() => {
-    let qOrders = query(collection(db, 'orders'));
-    let qMovements = query(collection(db, 'cashMovements'));
+    let qOrders = query(collection(db, 'orders'), where('mois', '==', selectedMonth));
+    let qMovements = query(collection(db, 'cashMovements'), where('mois', '==', selectedMonth));
 
     // If not admin, filter by assigned boutique (extra safety)
     if (!isAdmin && userBoutique !== 'Toutes') {
-      qOrders = query(collection(db, 'orders'), where('boutiqueSource', '==', userBoutique));
-      qMovements = query(collection(db, 'cashMovements'), where('boutiqueSource', '==', userBoutique));
+      qOrders = query(collection(db, 'orders'), 
+        where('mois', '==', selectedMonth),
+        where('boutiqueSource', '==', userBoutique)
+      );
+      qMovements = query(collection(db, 'cashMovements'), 
+        where('mois', '==', selectedMonth),
+        where('boutiqueSource', '==', userBoutique)
+      );
     }
 
     const unsubOrders = onSnapshot(qOrders, (snapshot) => {
@@ -52,7 +65,7 @@ export const FinancialBilan: React.FC<FinancialBilanProps> = ({ userBoutique, is
     });
 
     return () => { unsubOrders(); unsubMovements(); };
-  }, [isAdmin, userBoutique]);
+  }, [isAdmin, userBoutique, selectedMonth]);
 
   useEffect(() => {
     calculateStats();
@@ -125,22 +138,42 @@ export const FinancialBilan: React.FC<FinancialBilanProps> = ({ userBoutique, is
 
   return (
     <div className="space-y-8">
-      {/* Tab Bar Selector */}
-      {isAdmin && (
-        <Tabs value={viewBoutique} onValueChange={(val) => setViewBoutique(val as Boutique)} className="w-full">
-          <TabsList className="grid w-full grid-cols-3 h-14 p-1 bg-muted/50 border-2">
-            <TabsTrigger value="Toutes" className="text-lg font-bold gap-2">
-              <Store className="h-5 w-5" /> Vue Globale
-            </TabsTrigger>
-            <TabsTrigger value="Senade" className="text-lg font-bold gap-2">
-              <Store className="h-5 w-5" /> Sénade
-            </TabsTrigger>
-            <TabsTrigger value="Gankpodo" className="text-lg font-bold gap-2">
-              <Store className="h-5 w-5" /> Gankpodo
-            </TabsTrigger>
-          </TabsList>
-        </Tabs>
-      )}
+      {/* Month & Boutique Selectors */}
+      <div className="flex flex-col md:flex-row gap-4 items-center justify-between">
+        {isAdmin && (
+          <Tabs value={viewBoutique} onValueChange={(val) => setViewBoutique(val as Boutique)} className="flex-1 w-full">
+            <TabsList className="grid w-full grid-cols-3 h-14 p-1 bg-muted/50 border-2">
+              <TabsTrigger value="Toutes" className="text-lg font-bold gap-2">
+                <Store className="h-5 w-5" /> Vue Globale
+              </TabsTrigger>
+              <TabsTrigger value="Senade" className="text-lg font-bold gap-2">
+                <Store className="h-5 w-5" /> Sénade
+              </TabsTrigger>
+              <TabsTrigger value="Gankpodo" className="text-lg font-bold gap-2">
+                <Store className="h-5 w-5" /> Gankpodo
+              </TabsTrigger>
+            </TabsList>
+          </Tabs>
+        )}
+        
+        <div className="w-full md:w-64">
+          <Select value={selectedMonth} onValueChange={setSelectedMonth}>
+            <SelectTrigger className="h-14 text-lg font-bold">
+              <CalendarIcon className="mr-2 h-5 w-5" />
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {Array.from({ length: 6 }).map((_, i) => {
+                const d = new Date();
+                d.setMonth(d.getMonth() - i);
+                const val = d.toISOString().substring(0, 7);
+                const label = new Intl.DateTimeFormat('fr-FR', { month: 'long', year: 'numeric' }).format(d);
+                return <SelectItem key={val} value={val} className="capitalize font-medium">{label}</SelectItem>;
+              })}
+            </SelectContent>
+          </Select>
+        </div>
+      </div>
 
       {/* KPI Cards */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">

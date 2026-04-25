@@ -132,10 +132,22 @@ export const OrderForm: React.FC<OrderFormProps> = ({ initialOrder, onClose, use
     );
 
     try {
+      const getWeekNumber = (d: string) => {
+        const date = new Date(d);
+        date.setUTCDate(date.getUTCDate() + 4 - (date.getUTCDay()||7));
+        const yearStart = new Date(Date.UTC(date.getUTCFullYear(),0,1));
+        const weekNo = Math.ceil((((date.getTime() - yearStart.getTime()) / 86400000) + 1)/7);
+        return date.getUTCFullYear() + '-W' + String(weekNo).padStart(2, '0');
+      };
+
+      const dateDepotStr = formData.dateDepot || today;
+
       const orderData = {
         ...formData,
         agent_saisie: agentName, // Ensure it's always up to date
         updatedAt: serverTimestamp(),
+        mois: dateDepotStr.substring(0, 7), // YYYY-MM
+        semaine: getWeekNumber(dateDepotStr), // YYYY-Wxx
       };
 
       const dbOperation = async () => {

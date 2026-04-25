@@ -31,6 +31,8 @@ export interface Order {
   notifArriveeEnvoyee?: boolean;
   notifPar?: string;
   dateNotifArrivee?: any;
+  mois?: string; // YYYY-MM
+  semaine?: string; // YYYY-Wxx
 }
 
 export interface CashMovement {

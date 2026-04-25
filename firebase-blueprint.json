@@ -60,6 +60,14 @@
           "type": "boolean",
           "description": "Commande express"
         },
+        "mois": {
+          "type": "string",
+          "description": "Mois de dépot (YYYY-MM)"
+        },
+        "semaine": {
+          "type": "string",
+          "description": "Semaine de dépot (YYYY-Wxx)"
+        },
         "boutiqueSource": {
           "type": "string",
           "enum": ["Senade", "Gankpodo"],
@@ -92,6 +100,8 @@
         "montant": { "type": "number" },
         "description": { "type": "string" },
         "dateHeure": { "type": "string", "format": "date-time" },
+        "mois": { "type": "string", "description": "YYYY-MM" },
+        "semaine": { "type": "string", "description": "YYYY-Wxx" },
         "boutiqueSource": { "type": "string", "enum": ["Senade", "Gankpodo"] },
         "createdBy": { "type": "string" }
       },

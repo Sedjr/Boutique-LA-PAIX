@@ -120,38 +120,13 @@
 @layer base {
   * {
     @apply border-border outline-ring/50;
-  }
+    }
   body {
     @apply bg-background text-foreground;
-  }
+    }
   html {
     @apply font-sans;
-  }
-
-  /* --- Ajouts pour l'expérience PWA Mobile --- */
-  html, body {
-    /* Empêche le rebond élastique et le pull-to-refresh natif */
-    overscroll-behavior-y: none;
-    /* Empêche le zoom automatique sur les inputs */
-    touch-action: manipulation;
-    /* Désactive la sélection globale pour un effet application native */
-    -webkit-user-select: none;
-    user-select: none;
-    height: 100%;
-    overflow: hidden;
-  }
-
-  #root {
-    height: 100%;
-    overflow-y: auto;
-    -webkit-overflow-scrolling: touch;
-  }
-
-  input, textarea {
-    /* Réactive la sélection pour permettre l'écriture */
-    -webkit-user-select: text;
-    user-select: text;
-  }
+    }
 }
 
 @layer utilities {

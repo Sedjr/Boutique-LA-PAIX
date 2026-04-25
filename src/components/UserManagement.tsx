@@ -87,18 +87,22 @@ export const UserManagement: React.FC = () => {
     }
   };
 
-  const handleRefuseUser = async (uid: string, email: string) => {
+  const handleRefuseUser = async (uid: string | undefined, email: string) => {
     if (!window.confirm(`Voulez-vous refuser et supprimer définitivement la demande de ${email} ?`)) return;
     
     // Optimistic local update
-    setUsers(prev => prev.filter(u => u.uid !== uid));
+    if (uid) {
+      setUsers(prev => prev.filter(u => u.uid !== uid));
+    }
     setAlerts(prev => prev.filter(a => a.email !== email));
 
     try {
       const batch = writeBatch(db);
       
       // Delete user document
-      batch.delete(doc(db, 'users', uid));
+      if (uid) {
+        batch.delete(doc(db, 'users', uid));
+      }
       
       // Mark alerts for this email as read/delete them
       const alertsRef = collection(db, 'alertes_admin');
@@ -111,7 +115,7 @@ export const UserManagement: React.FC = () => {
       await batch.commit();
       toast.success('Demande refusée et supprimée');
     } catch (err) {
-      handleFirestoreError(err, OperationType.DELETE, `users/${uid}`);
+      handleFirestoreError(err, OperationType.DELETE, uid ? `users/${uid}` : `alertes_admin`);
     }
   };
 
@@ -219,7 +223,7 @@ export const UserManagement: React.FC = () => {
                         className="font-bold h-11 px-4"
                         onClick={() => {
                           const user = users.find(u => u.email === alert.email);
-                          if (user) handleRefuseUser(user.uid, user.email);
+                          handleRefuseUser(user?.uid, alert.email);
                         }}
                       >
                         Refuser

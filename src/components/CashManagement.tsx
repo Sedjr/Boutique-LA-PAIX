@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { db, handleFirestoreError, OperationType, auth } from '../firebase';
-import { collection, addDoc, query, orderBy, onSnapshot, serverTimestamp, where } from 'firebase/firestore';
+import { collection, addDoc, query, orderBy, onSnapshot, serverTimestamp, where, limit } from 'firebase/firestore';
 import { CashMovement, Boutique, TypeMouvement } from '../types';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -34,15 +34,18 @@ export const CashManagement: React.FC<CashManagementProps> = ({ userBoutique, is
     agent_saisie: agentName,
   });
 
+  const [queryLimit, setQueryLimit] = useState(20);
+
   useEffect(() => {
     if (!userBoutique) return;
 
-    let q = query(collection(db, 'cashMovements'), orderBy('dateHeure', 'desc'));
+    let q = query(collection(db, 'cashMovements'), orderBy('dateHeure', 'desc'), limit(queryLimit));
     
     if (userBoutique !== 'Toutes') {
       q = query(collection(db, 'cashMovements'), 
         where('boutiqueSource', '==', userBoutique),
-        orderBy('dateHeure', 'desc')
+        orderBy('dateHeure', 'desc'),
+        limit(queryLimit)
       );
     }
 
@@ -58,7 +61,7 @@ export const CashManagement: React.FC<CashManagementProps> = ({ userBoutique, is
     });
 
     return () => unsubscribe();
-  }, [userBoutique]);
+  }, [userBoutique, queryLimit]);
 
   const isWithinServiceHours = () => {
     if (!timeLockEnabled) return true;
@@ -91,11 +94,24 @@ export const CashManagement: React.FC<CashManagementProps> = ({ userBoutique, is
     );
 
     try {
+      const today = new Date();
+      const getWeekNumber = (d: Date) => {
+        const date = new Date(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate()));
+        date.setUTCDate(date.getUTCDate() + 4 - (date.getUTCDay()||7));
+        const yearStart = new Date(Date.UTC(date.getUTCFullYear(),0,1));
+        const weekNo = Math.ceil((((date.getTime() - yearStart.getTime()) / 86400000) + 1)/7);
+        return date.getUTCFullYear() + '-W' + String(weekNo).padStart(2, '0');
+      };
+
+      const dateStr = today.toISOString().split('T')[0];
+
       const dbOperation = addDoc(collection(db, 'cashMovements'), {
         ...formData,
         agent_saisie: agentName,
         dateHeure: serverTimestamp(),
         createdBy: auth.currentUser.uid,
+        mois: dateStr.substring(0, 7), // YYYY-MM
+        semaine: getWeekNumber(today) // YYYY-Wxx
       });
 
       await Promise.race([dbOperation, timeoutPromise]);
@@ -310,6 +326,13 @@ export const CashManagement: React.FC<CashManagementProps> = ({ userBoutique, is
           </Table>
         </CardContent>
       </Card>
+      {movements.length === queryLimit && (
+        <div className="flex justify-center mt-6">
+          <Button variant="outline" onClick={() => setQueryLimit(prev => prev + 20)} className="rounded-full shadow-sm font-medium px-8">
+            Charger plus
+          </Button>
+        </div>
+      )}
     </div>
   );
 };

@@ -1,11 +1,11 @@
 import React, { useState, useEffect } from 'react';
 import { db, handleFirestoreError, OperationType } from '../firebase';
-import { collection, query, orderBy, onSnapshot, doc, where, updateDoc, serverTimestamp, deleteDoc } from 'firebase/firestore';
+import { collection, query, orderBy, onSnapshot, doc, where, updateDoc, serverTimestamp, deleteDoc, limit } from 'firebase/firestore';
 import { Order, TypeService, Boutique } from '../types';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { WashingMachine, Shirt, CheckCircle2, MessageSquare, Trash2, Edit, Play, Store, Zap, Droplets, ChevronRight, Phone, Calendar, CreditCard, Info, Mail } from 'lucide-react';
+import { WashingMachine, Shirt, CheckCircle2, MessageSquare, Trash2, Edit, Play, Store, Zap, Droplets, ChevronRight, Phone, Calendar, CreditCard, Info, Mail, Loader2 } from 'lucide-react';
 import { sendWhatsAppReceipt, sendArrivalNotification } from '../lib/whatsapp';
 import { toast } from 'sonner';
 import { motion, AnimatePresence } from 'motion/react';
@@ -22,16 +22,18 @@ export const OrderList: React.FC<OrderListProps> = ({ onEdit, isAdmin, userBouti
   const [orders, setOrders] = useState<Order[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedOrder, setSelectedOrder] = useState<Order | null>(null);
+  const [queryLimit, setQueryLimit] = useState(20);
 
   useEffect(() => {
     if (!userBoutique) return;
 
-    let q = query(collection(db, 'orders'), orderBy('createdAt', 'desc'));
+    let q = query(collection(db, 'orders'), orderBy('createdAt', 'desc'), limit(queryLimit));
     
     if (userBoutique !== 'Toutes') {
       q = query(collection(db, 'orders'), 
         where('boutiqueSource', '==', userBoutique),
-        orderBy('createdAt', 'desc')
+        orderBy('createdAt', 'desc'),
+        limit(queryLimit)
       );
     }
 
@@ -47,7 +49,7 @@ export const OrderList: React.FC<OrderListProps> = ({ onEdit, isAdmin, userBouti
     });
 
     return () => unsubscribe();
-  }, [userBoutique]);
+  }, [userBoutique, queryLimit]);
 
   const handleSendReceipt = async (order: Order) => {
     sendWhatsAppReceipt(order);
@@ -270,6 +272,14 @@ export const OrderList: React.FC<OrderListProps> = ({ onEdit, isAdmin, userBouti
       {orders.length === 0 && (
         <div className="h-32 flex items-center justify-center text-muted-foreground bg-muted/20 rounded-xl border-2 border-dashed">
           Aucune commande pour le moment.
+        </div>
+      )}
+
+      {orders.length === queryLimit && (
+        <div className="flex justify-center mt-6">
+          <Button variant="outline" onClick={() => setQueryLimit(prev => prev + 20)} className="rounded-full shadow-sm font-medium px-8">
+            Charger plus
+          </Button>
         </div>
       )}
 
